@@ -36,6 +36,16 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - If the user doesn't see a frontend change reflected in the UI, it could mean they need to run `npm run build`, `npm run dev`, or `composer run dev`. Ask them.
 
+## Design
+
+For frontend UI and UX work, use the `oa-design` skill located at:
+
+`.agents/skills/oa-design/SKILL.md`
+
+Follow its design tokens, component patterns, typography, spacing, motion, layout, and visual design guidance.
+
+Adapt examples to the existing framework and architecture rather than changing frameworks just to match the examples.
+
 ## Documentation Files
 
 - You must only create documentation files if explicitly requested by the user.

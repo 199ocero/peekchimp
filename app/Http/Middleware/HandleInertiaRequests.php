@@ -2,11 +2,15 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
+use App\Services\Websites\CurrentWebsiteResolver;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
+    public function __construct(private readonly CurrentWebsiteResolver $websiteResolver) {}
+
     /**
      * The root template that's loaded on the first page visit.
      *
@@ -35,12 +39,17 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user,
             ],
+            'websites' => fn (): ?array => $user instanceof User
+                ? $this->websiteResolver->sharedData($user)
+                : null,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

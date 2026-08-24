@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Project;
 use Laravel\Fortify\Features;
 
 beforeEach(function () {
@@ -21,5 +22,7 @@ test('new users can register', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect(route('onboarding.show', absolute: false));
+    $this->assertDatabaseHas('users', ['email' => 'test@example.com', 'is_admin' => true]);
+    expect(Project::query()->count())->toBe(0);
 });

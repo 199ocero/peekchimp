@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Models\Project;
+use App\Models\ProjectDomain;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -56,5 +58,18 @@ class UserFactory extends Factory
             'two_factor_recovery_codes' => encrypt(json_encode(['recovery-code-1'])),
             'two_factor_confirmed_at' => now(),
         ]);
+    }
+
+    public function withVerifiedWebsite(): static
+    {
+        return $this->afterCreating(function (User $user): void {
+            $project = Project::factory()
+                ->for($user)
+                ->has(ProjectDomain::factory()->verified(), 'domains')
+                ->create();
+
+            $user->currentProject()->associate($project);
+            $user->save();
+        });
     }
 }

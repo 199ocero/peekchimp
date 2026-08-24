@@ -2,6 +2,7 @@ import { createInertiaApp } from '@inertiajs/vue3';
 import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
+import OnboardingLayout from '@/layouts/OnboardingLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
 
@@ -15,6 +16,10 @@ createInertiaApp({
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;
+            case name.startsWith('onboarding/'):
+                return OnboardingLayout;
+            case name.startsWith('public/'):
+                return null;
             case name.startsWith('settings/'):
                 return [AppLayout, SettingsLayout];
             default:
@@ -22,7 +27,7 @@ createInertiaApp({
         }
     },
     progress: {
-        color: '#4B5563',
+        color: '#009965',
     },
 });
 

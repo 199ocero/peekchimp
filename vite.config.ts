@@ -12,8 +12,11 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.ts'],
             refresh: true,
             fonts: [
-                bunny('Instrument Sans', {
-                    weights: [400, 500, 600],
+                bunny('Outfit', {
+                    weights: [400, 500, 600, 700],
+                }),
+                bunny('Geist Mono', {
+                    weights: [400, 500],
                 }),
             ],
         }),
@@ -29,6 +32,7 @@ export default defineConfig({
         }),
         wayfinder({
             formVariants: true,
+            command: process.env.WAYFINDER_COMMAND || 'php artisan wayfinder:generate',
         }),
     ],
     server: {

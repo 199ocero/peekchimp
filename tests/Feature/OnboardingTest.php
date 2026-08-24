@@ -45,10 +45,12 @@ test('onboarding keeps dashboard navigation beside logout and makes the logo cli
 
 test('onboarding timezone select keeps its chevron inset from the edge', function () {
     $onboardingPage = file_get_contents(resource_path('js/pages/onboarding/Index.vue'));
+    $styles = file_get_contents(resource_path('css/app.css'));
 
     expect($onboardingPage)
-        ->toContain('class="onboarding-select h-9')
-        ->toContain('padding-right: 2.75rem;')
+        ->toContain('class="select-with-chevron h-9')
+        ->and($styles)
+        ->toContain('padding-inline: 0.75rem 2.75rem;')
         ->toContain('background-position: right 0.875rem center;');
 });
 

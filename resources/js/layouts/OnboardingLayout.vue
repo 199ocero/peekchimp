@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { dashboard, logout } from '@/routes';
 
 const page = usePage();
-const canReturnToDashboard = computed(() => page.props.backToDashboard === true);
+const canReturnToDashboard = computed(
+    () => page.props.backToDashboard === true,
+);
 </script>
 
 <template>
@@ -26,11 +28,7 @@ const canReturnToDashboard = computed(() => page.props.backToDashboard === true)
             </div>
 
             <div class="flex items-center gap-1">
-                <Button
-                    v-if="canReturnToDashboard"
-                    as-child
-                    size="sm"
-                >
+                <Button v-if="canReturnToDashboard" as-child size="sm">
                     <Link :href="dashboard()">Back to dashboard</Link>
                 </Button>
                 <Button as-child variant="ghost" size="sm">

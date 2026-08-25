@@ -65,7 +65,7 @@ class CurrentWebsiteResolver
         ];
     }
 
-    /** @return HasMany<Project, $this> */
+    /** @return HasMany<Project, User> */
     private function verifiedProjects(User $user): HasMany
     {
         return $user->projects()

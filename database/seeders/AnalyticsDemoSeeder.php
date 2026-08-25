@@ -168,7 +168,7 @@ class AnalyticsDemoSeeder extends Seeder
 
             if ($lastSeenAt->gt($latestSeenAt)) {
                 $lastSeenAt = $latestSeenAt;
-                $durationSeconds = max(0, $startedAt->diffInSeconds($lastSeenAt));
+                $durationSeconds = max(0, $lastSeenAt->getTimestamp() - $startedAt->getTimestamp());
             }
         }
 

@@ -18,13 +18,11 @@ class UpdateWebsiteAction
     {
         return DB::transaction(function () use ($project, $website): Project {
             $domain = $this->domainNormalizer->normalize($website['url']);
-            $duplicate = $project->user()
-                ->whereHas('projects', function ($query) use ($project, $domain): void {
-                    $query
-                        ->where('is_active', true)
-                        ->where('id', '!=', $project->getKey())
-                        ->whereHas('domains', fn ($domainQuery) => $domainQuery->where('domain', $domain));
-                })
+            $duplicate = Project::query()
+                ->whereBelongsTo($project->user, 'user')
+                ->where('is_active', true)
+                ->whereKeyNot($project->getKey())
+                ->whereRelation('domains', 'domain', $domain)
                 ->exists();
 
             if ($duplicate) {

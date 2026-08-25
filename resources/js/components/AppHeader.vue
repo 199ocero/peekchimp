@@ -37,7 +37,6 @@ const appearanceOptions = [
     { value: 'dark', Icon: Moon, label: 'Dark' },
     { value: 'system', Icon: Monitor, label: 'System' },
 ] as const;
-
 </script>
 
 <template>
@@ -51,9 +50,7 @@ const appearanceOptions = [
                     aria-label="Peekchimp dashboard"
                     class="flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/40 focus-visible:outline-none"
                 >
-                    <span
-                        class="flex size-7 items-center justify-center"
-                    >
+                    <span class="flex size-7 items-center justify-center">
                         <AppLogoIcon class="size-6 fill-current" />
                     </span>
                 </Link>
@@ -86,9 +83,7 @@ const appearanceOptions = [
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" class="w-36">
-                            <DropdownMenuRadioGroup
-                                :model-value="appearance"
-                            >
+                            <DropdownMenuRadioGroup :model-value="appearance">
                                 <DropdownMenuRadioItem
                                     v-for="option in appearanceOptions"
                                     :key="option.value"

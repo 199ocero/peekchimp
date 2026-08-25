@@ -11,7 +11,7 @@ Peekchimp is a Laravel application with an Inertia and Vue frontend. Its product
 3. Select **Docker Compose** as the build pack. Do not select Dockerfile: the Compose file also starts PostgreSQL, Redis, Horizon, and the scheduler.
 4. Continue to the resource configuration screen.
 
-The included [`docker-compose.yml`](docker-compose.yml) creates these services:
+The included [`docker-compose.yaml`](docker-compose.yaml) creates these services:
 
 | Service     | Purpose                     | Publicly exposed          |
 | ----------- | --------------------------- | ------------------------- |

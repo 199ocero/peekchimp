@@ -14,3 +14,6 @@ Resolve country from the configured trusted hosting headers first, then fall bac
 
 ## Require Cloudflare IP geolocation for country capture
 Cloudflare is optional and this former requirement is superseded. Country capture must use configured trusted hosting headers when present and otherwise fall back to the local MMDB database; it must never require a specific CDN.
+
+## Normalize user agents before classification
+Normalize user-agent strings to lowercase before matching. Keep distinctive Chromium-family tokens such as Edge and Opera ahead of generic Chrome/Safari checks, and cover desktop and iOS token variants with ingestion tests.

@@ -147,6 +147,10 @@ class IngestEventsAction
                     $session->country = $event['country'];
                 }
 
+                if (in_array($session->browser, [null, 'Other'], true) && $event['browser'] !== 'Other') {
+                    $session->browser = $event['browser'];
+                }
+
                 $lastSeenAt = $session->last_seen_at === null
                     ? null
                     : CarbonImmutable::parse((string) $session->last_seen_at);

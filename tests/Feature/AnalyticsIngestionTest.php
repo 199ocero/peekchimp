@@ -55,6 +55,59 @@ test('a browser event is normalized and stored without raw identity data', funct
         ->and(AnalyticsSession::query()->sole()->country)->toBe('PH');
 });
 
+test('browser user agents are classified', function (string $userAgent, string $browser) {
+    $project = Project::factory()->create();
+
+    $this->withHeaders(['User-Agent' => $userAgent])
+        ->postJson(route('api.v1.events.store'), analyticsPayload($project->site_key))
+        ->assertAccepted();
+
+    expect(AnalyticsEvent::query()->sole()->browser)->toBe($browser)
+        ->and(AnalyticsSession::query()->sole()->browser)->toBe($browser);
+})->with([
+    'Chrome' => [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0.0.0 Safari/537.36',
+        'Chrome',
+    ],
+    'Chrome on iOS' => [
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 CriOS/139.0 Mobile/15E148 Safari/604.1',
+        'Chrome',
+    ],
+    'Edge' => [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0',
+        'Edge',
+    ],
+    'Opera' => [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0.0.0 Safari/537.36 OPR/120.0.0.0',
+        'Opera',
+    ],
+    'Firefox' => [
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:142.0) Gecko/20100101 Firefox/142.0',
+        'Firefox',
+    ],
+    'Safari' => [
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.6 Safari/605.1.15',
+        'Safari',
+    ],
+]);
+
+test('a later classified event repairs the browser on its existing session', function () {
+    $project = Project::factory()->create();
+    $chromeUserAgent = 'Mozilla/5.0 AppleWebKit/537.36 Chrome/139.0.0.0 Safari/537.36';
+
+    $this->withHeaders(['User-Agent' => $chromeUserAgent])
+        ->postJson(route('api.v1.events.store'), analyticsPayload($project->site_key))
+        ->assertAccepted();
+    AnalyticsSession::query()->sole()->update(['browser' => 'Other']);
+
+    $this->withHeaders(['User-Agent' => $chromeUserAgent])->postJson(
+        route('api.v1.events.store'),
+        analyticsPayload($project->site_key, '22222222-2222-4222-8222-222222222222'),
+    )->assertAccepted();
+
+    expect(AnalyticsSession::query()->sole()->browser)->toBe('Chrome');
+});
+
 test('an invalid country header is not stored', function (string $country) {
     $project = Project::factory()->create();
 

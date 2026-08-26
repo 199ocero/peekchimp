@@ -110,11 +110,13 @@ class EventNormalizer
 
     private function browser(string $userAgent): string
     {
+        $userAgent = Str::lower($userAgent);
+
         return match (true) {
             str_contains($userAgent, 'edg') => 'Edge',
-            str_contains($userAgent, 'opr') || str_contains($userAgent, 'opera') => 'Opera',
-            str_contains($userAgent, 'chrome') => 'Chrome',
-            str_contains($userAgent, 'firefox') => 'Firefox',
+            str_contains($userAgent, 'opr') || str_contains($userAgent, 'opera') || str_contains($userAgent, 'opios') => 'Opera',
+            str_contains($userAgent, 'chrome') || str_contains($userAgent, 'crios') || str_contains($userAgent, 'chromium') => 'Chrome',
+            str_contains($userAgent, 'firefox') || str_contains($userAgent, 'fxios') => 'Firefox',
             str_contains($userAgent, 'safari') => 'Safari',
             default => 'Other',
         };

@@ -6,6 +6,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | --- | --- |
 | app/Queries/Analytics/** | .ai/rules/analytics.md |
 | app/Http/Controllers/Api/** | .ai/rules/api.md |
+| bootstrap/app.php | .ai/rules/bootstrap.md |
 | ** | .ai/rules/general.md |
 | app/Models/Project.php | .ai/rules/models.md |
 | resources/js/pages/Dashboard.vue | .ai/rules/pages.md |

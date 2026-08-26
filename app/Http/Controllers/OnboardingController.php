@@ -14,7 +14,7 @@ class OnboardingController extends Controller
 {
     public function show(Request $request): Response
     {
-        $project = $request->user()?->projects()->with('domains')->oldest()->first();
+        $project = $request->user()?->workspaceOwnerUser()->projects()->with('domains')->oldest()->first();
         $domain = $project?->domains->first();
 
         return Inertia::render('onboarding/Index', [

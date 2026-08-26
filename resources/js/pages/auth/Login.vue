@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
-import { request } from '@/routes/password';
 
 defineOptions({
     layout: {
@@ -21,7 +20,7 @@ defineOptions({
 
 defineProps<{
     status?: string;
-    canResetPassword: boolean;
+    canRegister: boolean;
 }>();
 </script>
 
@@ -60,14 +59,6 @@ defineProps<{
             <div class="grid gap-2">
                 <div class="flex items-center justify-between">
                     <Label for="password">Password</Label>
-                    <TextLink
-                        v-if="canResetPassword"
-                        :href="request()"
-                        class="text-sm"
-                        :tabindex="5"
-                    >
-                        Forgot your password?
-                    </TextLink>
                 </div>
                 <PasswordInput
                     id="password"
@@ -100,8 +91,13 @@ defineProps<{
         </div>
 
         <div class="text-center text-sm text-muted-foreground">
-            Don't have an account?
-            <TextLink :href="register()" :tabindex="5">Sign up</TextLink>
+            <template v-if="canRegister">
+                Don't have an account?
+                <TextLink :href="register()" :tabindex="5">Sign up</TextLink>
+            </template>
+            <template v-else>
+                Need access? Ask the admin for an invitation.
+            </template>
         </div>
     </Form>
 </template>

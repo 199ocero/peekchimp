@@ -19,9 +19,10 @@ class CreateWebsiteAction
     public function handle(User $user, array $website): Project
     {
         return DB::transaction(function () use ($user, $website): Project {
+            $workspaceOwner = $user->workspaceOwnerUser();
             $domain = $this->domainNormalizer->normalize($website['url']);
 
-            $duplicate = $user->projects()
+            $duplicate = $workspaceOwner->projects()
                 ->where('is_active', true)
                 ->whereHas('domains', fn ($query) => $query->where('domain', $domain))
                 ->exists();
@@ -32,7 +33,7 @@ class CreateWebsiteAction
                 ]);
             }
 
-            $project = $user->projects()->create([
+            $project = $workspaceOwner->projects()->create([
                 'name' => $website['name'],
                 'site_key' => Str::random(40),
                 'timezone' => $website['timezone'],

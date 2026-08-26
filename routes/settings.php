@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\MemberInvitationController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use Illuminate\Auth\Middleware\RequirePassword;
@@ -13,6 +14,17 @@ Route::middleware(['auth', 'website.configured'])->group(function () {
 });
 
 Route::middleware(['auth', 'verified', 'website.configured'])->group(function () {
+    Route::get('settings/members', [MemberInvitationController::class, 'edit'])
+        ->name('members.edit');
+    Route::post('settings/member-invitations', [MemberInvitationController::class, 'store'])
+        ->name('members.store');
+    Route::delete('settings/member-invitations/{invitation}', [MemberInvitationController::class, 'destroy'])
+        ->name('members.destroy');
+    Route::post('settings/members/{member}/password-reset', [MemberInvitationController::class, 'createPasswordResetLink'])
+        ->name('members.password-reset.store');
+    Route::delete('settings/members/{member}', [MemberInvitationController::class, 'destroyMember'])
+        ->name('members.member.destroy');
+
     Route::delete('settings/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::get('settings/security', [SecurityController::class, 'edit'])

@@ -90,13 +90,6 @@ onBeforeUnmount(() => {
                 </Link>
 
                 <nav class="flex items-center gap-1.5" aria-label="Primary">
-                    <a
-                        href="#how-it-works"
-                        class="hidden rounded-full px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:inline-flex"
-                    >
-                        How it works
-                    </a>
-
                     <DropdownMenu>
                         <DropdownMenuTrigger as-child>
                             <Button
@@ -152,7 +145,12 @@ onBeforeUnmount(() => {
                         >
                             <Link :href="login()">Log in</Link>
                         </Button>
-                        <Button as-child size="sm" class="rounded-full">
+                        <Button
+                            v-if="page.props.canRegister"
+                            as-child
+                            size="sm"
+                            class="rounded-full"
+                        >
                             <Link :href="register()">Start free</Link>
                         </Button>
                     </template>
@@ -197,7 +195,14 @@ onBeforeUnmount(() => {
                                 Open your dashboard
                                 <ArrowRight class="size-4" />
                             </Link>
-                            <Link v-else :href="register()">
+                            <Link
+                                v-else
+                                :href="
+                                    page.props.canRegister
+                                        ? register()
+                                        : login()
+                                "
+                            >
                                 Add your website
                                 <ArrowRight class="size-4" />
                             </Link>

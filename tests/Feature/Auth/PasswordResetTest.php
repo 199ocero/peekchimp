@@ -15,6 +15,11 @@ test('reset password link screen can be rendered', function () {
     $response->assertOk();
 });
 
+test('login page does not expose a public password reset link', function () {
+    expect(file_get_contents(resource_path('js/pages/auth/Login.vue')))
+        ->not->toContain('Forgot your password?');
+});
+
 test('reset password link can be requested', function () {
     Notification::fake();
 

@@ -18,14 +18,15 @@ class SetUpWebsiteAction
     public function handle(User $user, array $website): Project
     {
         return DB::transaction(function () use ($user, $website): Project {
-            $project = $user->projects()
+            $workspaceOwner = $user->workspaceOwnerUser();
+            $project = $workspaceOwner->projects()
                 ->where('is_active', true)
                 ->oldest()
                 ->lockForUpdate()
                 ->first();
 
             if ($project === null) {
-                $project = $user->projects()->create([
+                $project = $workspaceOwner->projects()->create([
                     'name' => $website['name'],
                     'site_key' => Str::random(40),
                     'timezone' => $website['timezone'],

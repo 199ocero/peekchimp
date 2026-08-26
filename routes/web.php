@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InvitationAcceptanceController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PublicDashboardController;
 use App\Http\Controllers\WebsiteController;
@@ -8,6 +9,13 @@ use App\Http\Controllers\WebsiteSettingsController;
 use App\Http\Controllers\WebsiteSharingController;
 use App\Http\Middleware\PublicShareHeaders;
 use Illuminate\Support\Facades\Route;
+
+Route::middleware(['guest', 'signed', 'throttle:6,1'])->group(function () {
+    Route::get('invitations/{invitation}', [InvitationAcceptanceController::class, 'show'])
+        ->name('invitations.show');
+    Route::post('invitations/{invitation}', [InvitationAcceptanceController::class, 'store'])
+        ->name('invitations.store');
+});
 
 Route::inertia('/', 'Welcome')->name('home');
 

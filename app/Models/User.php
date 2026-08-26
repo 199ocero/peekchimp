@@ -19,6 +19,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string $name
  * @property string $email
  * @property bool $is_admin
+ * @property int|null $workspace_owner_id
  * @property int|null $current_project_id
  * @property Carbon|null $email_verified_at
  * @property string $password
@@ -29,8 +30,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'is_admin'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'is_admin', 'current_project_id'])]
+#[Fillable(['name', 'email', 'password', 'is_admin', 'workspace_owner_id'])]
+#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'is_admin', 'current_project_id', 'workspace_owner_id'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -59,6 +60,29 @@ class User extends Authenticatable
         return $this->hasMany(Project::class);
     }
 
+    /** @return HasMany<User, $this> */
+    public function members(): HasMany
+    {
+        return $this->hasMany(self::class, 'workspace_owner_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function workspaceOwner(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'workspace_owner_id');
+    }
+
+    /** @return HasMany<MemberInvitation, $this> */
+    public function memberInvitations(): HasMany
+    {
+        return $this->hasMany(MemberInvitation::class, 'invited_by_id');
+    }
+
+    public function workspaceOwnerUser(): self
+    {
+        return $this->is_admin ? $this : ($this->workspaceOwner()->first() ?? $this);
+    }
+
     /** @return BelongsTo<Project, $this> */
     public function currentProject(): BelongsTo
     {
@@ -67,7 +91,7 @@ class User extends Authenticatable
 
     public function hasCompletedWebsiteSetup(): bool
     {
-        return $this->projects()
+        return $this->workspaceOwnerUser()->projects()
             ->where('is_active', true)
             ->whereHas('domains', fn ($query) => $query->where('is_verified', true))
             ->exists();

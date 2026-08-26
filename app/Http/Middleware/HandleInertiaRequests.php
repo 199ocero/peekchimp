@@ -45,8 +45,9 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $user,
+                'user' => $user?->makeVisible('is_admin'),
             ],
+            'canRegister' => fn (): bool => User::query()->where('is_admin', true)->doesntExist(),
             'websites' => fn (): ?array => $user instanceof User
                 ? $this->websiteResolver->sharedData($user)
                 : null,

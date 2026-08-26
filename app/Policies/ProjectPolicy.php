@@ -9,7 +9,7 @@ class ProjectPolicy
 {
     public function view(User $user, Project $project): bool
     {
-        return $project->user()->is($user) && $project->is_active;
+        return $project->user()->is($user->workspaceOwnerUser()) && $project->is_active;
     }
 
     public function create(User $user): bool

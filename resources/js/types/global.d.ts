@@ -19,6 +19,7 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             auth: Auth;
+            canRegister: boolean;
             websites: WebsiteSwitcherData | null;
             sidebarOpen: boolean;
             [key: string]: unknown;

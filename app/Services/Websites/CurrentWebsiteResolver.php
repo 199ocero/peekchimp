@@ -29,7 +29,7 @@ class CurrentWebsiteResolver
      */
     public function activeWebsites(User $user): Collection
     {
-        return $user->projects()
+        return $user->workspaceOwnerUser()->projects()
             ->where('is_active', true)
             ->with('domains')
             ->oldest()
@@ -68,7 +68,7 @@ class CurrentWebsiteResolver
     /** @return HasMany<Project, User> */
     private function verifiedProjects(User $user): HasMany
     {
-        return $user->projects()
+        return $user->workspaceOwnerUser()->projects()
             ->where('is_active', true)
             ->whereHas('domains', fn ($query) => $query->where('is_verified', true))
             ->with('domains');

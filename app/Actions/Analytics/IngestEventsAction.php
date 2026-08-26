@@ -143,6 +143,10 @@ class IngestEventsAction
                     $session->utm_campaign = $event['utm_campaign'];
                 }
 
+                if ($session->country === null && $event['country'] !== null) {
+                    $session->country = $event['country'];
+                }
+
                 $lastSeenAt = $session->last_seen_at === null
                     ? null
                     : CarbonImmutable::parse((string) $session->last_seen_at);

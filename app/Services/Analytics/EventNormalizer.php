@@ -8,6 +8,8 @@ use Illuminate\Support\Str;
 
 class EventNormalizer
 {
+    public function __construct(private readonly CountryResolver $countryResolver) {}
+
     /**
      * @param  array<string, mixed>  $event
      * @return array<string, mixed>
@@ -49,8 +51,6 @@ class EventNormalizer
             }
         }
 
-        $country = strtoupper((string) $request->header('CF-IPCountry', ''));
-
         return [
             'event_id' => (string) ($event['event_id'] ?? Str::uuid()),
             'event_name' => (string) $event['event_name'],
@@ -58,7 +58,7 @@ class EventNormalizer
             'client_session_id' => isset($event['session_id']) ? (string) $event['session_id'] : null,
             'path' => $this->path($path),
             'referrer_host' => $this->host($referrer),
-            'country' => preg_match('/^[A-Z]{2}$/', $country) === 1 && $country !== 'XX' ? $country : null,
+            'country' => $this->countryResolver->resolve($request),
             'device' => $this->device((string) $request->userAgent()),
             'browser' => $this->browser((string) $request->userAgent()),
             'operating_system' => $this->operatingSystem((string) $request->userAgent()),

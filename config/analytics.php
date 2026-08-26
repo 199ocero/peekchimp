@@ -6,6 +6,21 @@ return [
     'ingestion_max_events' => 10,
     'session_timeout_minutes' => 30,
 
+    'geolocation' => [
+        'database_path' => env(
+            'PEEKCHIMP_GEOIP_DATABASE_PATH',
+            storage_path('app/private/geoip/dbip-country-lite.mmdb'),
+        ),
+        'database_url' => env('PEEKCHIMP_GEOIP_DATABASE_URL'),
+        'country_headers' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env(
+                'PEEKCHIMP_COUNTRY_HEADERS',
+                'CF-IPCountry,X-Vercel-IP-Country,CloudFront-Viewer-Country,Eo-IpCountry',
+            )),
+        ))),
+    ],
+
     'ai_referrals' => [
         'chatgpt' => [
             'label' => 'ChatGPT',

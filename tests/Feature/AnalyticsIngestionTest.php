@@ -73,6 +73,39 @@ test('an invalid country header is not stored', function (string $country) {
     'non-letter code' => '1A',
 ]);
 
+test('a supported hosting country header is stored without Cloudflare', function () {
+    $project = Project::factory()->create();
+
+    $this->withHeaders([
+        'User-Agent' => 'Mozilla/5.0 Chrome/126 Safari/537.36',
+        'X-Vercel-IP-Country' => 'SG',
+    ])->postJson(route('api.v1.events.store'), analyticsPayload($project->site_key))
+        ->assertAccepted();
+
+    expect(AnalyticsEvent::query()->sole()->country)->toBe('SG')
+        ->and(AnalyticsSession::query()->sole()->country)->toBe('SG');
+});
+
+test('a later classified event fills the country on its existing session', function () {
+    $project = Project::factory()->create();
+
+    $request = $this->withHeaders([
+        'User-Agent' => 'Mozilla/5.0 Chrome/126 Safari/537.36',
+    ]);
+    $request->postJson(route('api.v1.events.store'), analyticsPayload($project->site_key))
+        ->assertAccepted();
+
+    $this->withHeaders([
+        'User-Agent' => 'Mozilla/5.0 Chrome/126 Safari/537.36',
+        'CF-IPCountry' => 'PH',
+    ])->postJson(
+        route('api.v1.events.store'),
+        analyticsPayload($project->site_key, '22222222-2222-4222-8222-222222222222'),
+    )->assertAccepted();
+
+    expect(AnalyticsSession::query()->sole()->country)->toBe('PH');
+});
+
 test('the same event id is idempotent', function () {
     $project = Project::factory()->create();
     $request = $this->withHeaders([

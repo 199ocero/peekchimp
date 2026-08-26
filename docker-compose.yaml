@@ -46,6 +46,8 @@ services:
         condition: service_healthy
     expose:
       - "8000"
+    volumes:
+      - geoip-data:/var/www/html/storage/app/private/geoip
     command: >-
       sh -lc "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
     healthcheck:
@@ -78,6 +80,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - geoip-data:/var/www/html/storage/app/private/geoip
     command: php artisan schedule:work
 
   postgres:
@@ -113,5 +117,6 @@ services:
       retries: 10
 
 volumes:
+  geoip-data:
   postgres-data:
   redis-data:

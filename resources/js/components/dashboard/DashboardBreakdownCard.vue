@@ -190,11 +190,22 @@ function activateAdjacentTab(event: KeyboardEvent, offset: number): void {
                         <p class="truncate text-xs text-muted-foreground">
                             {{ activeTab.description }}
                         </p>
-                        <span
-                            class="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums"
-                        >
-                            {{ formatNumber(activeTab.total) }} total
-                        </span>
+                        <div class="flex shrink-0 items-center gap-2">
+                            <a
+                                v-if="activeTab.kind === 'country'"
+                                href="https://db-ip.com"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="text-[10px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                            >
+                                IP geolocation by DB-IP
+                            </a>
+                            <span
+                                class="font-mono text-[10px] text-muted-foreground tabular-nums"
+                            >
+                                {{ formatNumber(activeTab.total) }} total
+                            </span>
+                        </div>
                     </div>
 
                     <div

@@ -2,6 +2,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
     Activity,
+    BadgePercent,
     CircleCheck,
     CircleGauge,
     FileStack,
@@ -17,6 +18,7 @@ import {
     UserRound,
     UsersRound,
     Waypoints,
+    MousePointerClick,
 } from '@lucide/vue';
 import type { Component } from 'vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -32,6 +34,12 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { dashboard } from '@/routes';
+import { store as insightActionStore } from '@/routes/insights/actions';
+import { aiTraffic as aiTrafficRoute } from '@/routes/websites';
+import { index as actionsIndex } from '@/routes/websites/actions';
+import { show as aiVisibilityShow } from '@/routes/websites/ai-visibility';
+import { index as funnelsIndex } from '@/routes/websites/funnels';
+import { index as goalsIndex } from '@/routes/websites/goals';
 import { edit as editWebsiteSettings } from '@/routes/websites/settings';
 
 type Breakdown = { label: string; value: number };
@@ -54,6 +62,22 @@ type DashboardInsight = {
     tone: 'neutral' | 'attention' | 'positive';
     value: number;
 };
+type ActionableInsight = {
+    id: number;
+    fingerprint: string;
+    category: string;
+    label: string;
+    metric: string;
+    current_value: number;
+    previous_value: number;
+    percentage_change: number | null;
+    confidence: string;
+    summary: string;
+    explanation: string;
+    recommendation: string;
+    severity: string;
+    actions: Array<{ key: string; label: string; description: string }>;
+};
 type Analytics = {
     range: {
         key: string;
@@ -70,10 +94,13 @@ type Analytics = {
         bounceRate: number;
         averageDuration: number;
         viewsPerVisitor: number;
+        conversions: number;
+        conversionRate: number;
     };
     metricTrends: {
         activeVisitors: MetricTrend;
         visitors: MetricTrend;
+        sessions: MetricTrend;
         pageviews: MetricTrend;
         bounceRate: MetricTrend;
         viewsPerVisitor: MetricTrend;
@@ -85,13 +112,42 @@ type Analytics = {
         visitors: number;
     }>;
     topPages: Breakdown[];
+    entryPages: Breakdown[];
+    exitPages: Breakdown[];
     referrers: Breakdown[];
+    sources?: Breakdown[];
     countryVisits: CountryVisits;
     devices: Breakdown[];
     browsers: Breakdown[];
+    operatingSystems: Breakdown[];
     campaigns: Breakdown[];
+    mediums: Breakdown[];
     aiReferrals: { totalVisits: number; sources: Breakdown[] };
     insights: DashboardInsight[];
+    whatChanged: ActionableInsight[];
+    actionableInsights: ActionableInsight[];
+    importantActions: Array<{
+        id: number;
+        name: string;
+        views: number;
+        clicks: number;
+        ctr: number;
+    }>;
+    goals: Array<{
+        id: number;
+        name: string;
+        conversions: number;
+        conversionRate: number;
+        trend: { previous: number; change: number | null };
+    }>;
+    aiTraffic: {
+        visitors: number;
+        visits: number;
+        pageviews: number;
+        conversions: number;
+        sources: Breakdown[];
+        pages: Breakdown[];
+    };
 };
 
 const props = defineProps<{
@@ -160,6 +216,19 @@ const metricCards = computed<
         ),
         change: props.analytics.metricTrends.visitors.change,
         series: props.analytics.metricTrends.visitors.series,
+    },
+    {
+        label: 'Visits',
+        value: formatNumber(props.analytics.metrics.sessions),
+        detail: 'Total sessions during this period.',
+        icon: UsersRound,
+        currentValue: props.analytics.metrics.sessions,
+        previousValue: props.analytics.metricTrends.sessions.previous,
+        previousValueLabel: formatNumber(
+            props.analytics.metricTrends.sessions.previous,
+        ),
+        change: props.analytics.metricTrends.sessions.change,
+        series: props.analytics.metricTrends.sessions.series,
     },
     {
         label: 'Views',
@@ -263,9 +332,9 @@ const acquisitionTabs = computed(() => [
         label: 'Sources',
         description: 'Search, other websites, and direct visits',
         emptyMessage: 'No traffic sources in this period.',
-        items: props.analytics.referrers,
+        items: props.analytics.sources ?? props.analytics.referrers,
         kind: 'source' as const,
-        total: totalOf(props.analytics.referrers),
+        total: totalOf(props.analytics.sources ?? props.analytics.referrers),
     },
     {
         id: 'campaigns',
@@ -277,6 +346,15 @@ const acquisitionTabs = computed(() => [
         total: totalOf(props.analytics.campaigns),
     },
     {
+        id: 'mediums',
+        label: 'Mediums',
+        description: 'Organic, social, email, and other tags',
+        emptyMessage: 'No traffic mediums in this period.',
+        items: props.analytics.mediums,
+        kind: 'campaign' as const,
+        total: totalOf(props.analytics.mediums),
+    },
+    {
         id: 'ai',
         label: 'AI referrals',
         description: 'Links and tags only; individual answers stay private',
@@ -286,6 +364,29 @@ const acquisitionTabs = computed(() => [
         total: props.analytics.aiReferrals.totalVisits,
     },
 ]);
+
+const actionableInsights = computed(
+    () =>
+        props.analytics.actionableInsights ?? props.analytics.whatChanged ?? [],
+);
+const activeInsightAction = ref<string | null>(null);
+
+function runInsightAction(
+    insight: ActionableInsight,
+    action: { key: string; label: string; description: string },
+): void {
+    activeInsightAction.value = insight.id + ':' + action.key;
+    router.post(
+        insightActionStore(insight.id).url,
+        { action: action.key },
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                activeInsightAction.value = null;
+            },
+        },
+    );
+}
 
 const audienceTabs = computed(() => [
     {
@@ -328,10 +429,27 @@ const audienceTabs = computed(() => [
         kind: 'browser' as const,
         total: totalOf(props.analytics.browsers),
     },
+    {
+        id: 'operating-systems',
+        label: 'OS',
+        description: 'Operating systems used to visit your site',
+        emptyMessage: 'No operating-system data in this period.',
+        items: props.analytics.operatingSystems,
+        kind: 'os' as const,
+        total: totalOf(props.analytics.operatingSystems),
+    },
 ]);
 
 function formatNumber(value: number): string {
     return new Intl.NumberFormat().format(value);
+}
+
+function trendLabel(change: number | null): string {
+    if (change === null) {
+        return 'New';
+    }
+
+    return (change >= 0 ? '+' : '') + change + '%';
 }
 
 function formatPercentage(value: number): string {
@@ -451,6 +569,26 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                    <Button
+                        as-child
+                        variant="ghost"
+                        size="sm"
+                        class="hidden sm:inline-flex"
+                    >
+                        <Link :href="aiTrafficRoute(project.id).url"
+                            >AI traffic</Link
+                        >
+                    </Button>
+                    <Button
+                        as-child
+                        variant="ghost"
+                        size="sm"
+                        class="hidden sm:inline-flex"
+                    >
+                        <Link :href="aiVisibilityShow(project.id).url"
+                            >AI visibility</Link
+                        >
+                    </Button>
                     <span
                         class="inline-flex h-9 items-center gap-2 rounded-full bg-secondary px-3 text-xs text-muted-foreground"
                     >
@@ -554,6 +692,117 @@ onBeforeUnmount(() => {
                         :inverse="metric.inverse"
                         :is-live="metric.isLive"
                     />
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <Card class="flex items-center justify-between gap-4 p-4">
+                        <div class="flex items-center gap-3">
+                            <span
+                                class="flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground"
+                                ><BadgePercent class="size-4"
+                            /></span>
+                            <div>
+                                <p class="text-sm font-medium">Conversions</p>
+                                <p class="text-xs text-muted-foreground">
+                                    Completed goals this period
+                                </p>
+                            </div>
+                        </div>
+                        <span class="font-mono text-lg tabular-nums">{{
+                            formatNumber(analytics.metrics.conversions)
+                        }}</span>
+                    </Card>
+                    <Card class="flex items-center justify-between gap-4 p-4">
+                        <div class="flex items-center gap-3">
+                            <span
+                                class="flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground"
+                                ><MousePointerClick class="size-4"
+                            /></span>
+                            <div>
+                                <p class="text-sm font-medium">
+                                    Conversion rate
+                                </p>
+                                <p class="text-xs text-muted-foreground">
+                                    Visits that completed a goal
+                                </p>
+                            </div>
+                        </div>
+                        <span class="font-mono text-lg tabular-nums">{{
+                            formatPercentage(analytics.metrics.conversionRate)
+                        }}</span>
+                    </Card>
+                </div>
+            </section>
+
+            <section
+                v-if="actionableInsights.length"
+                aria-labelledby="what-changed-title"
+                class="space-y-3"
+            >
+                <div>
+                    <h2 id="what-changed-title" class="text-sm font-medium">
+                        What changed?
+                    </h2>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                        Meaningful movement compared with the previous
+                        equivalent period.
+                    </p>
+                </div>
+                <div class="grid gap-3 md:grid-cols-2">
+                    <Card
+                        v-for="insight in actionableInsights"
+                        :key="insight.fingerprint"
+                        class="p-4"
+                    >
+                        <div class="flex items-start gap-3">
+                            <span
+                                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-warning"
+                                ><Lightbulb class="size-4"
+                            /></span>
+                            <div class="min-w-0">
+                                <p class="text-sm font-medium">
+                                    {{ insight.summary }}
+                                </p>
+                                <p
+                                    class="mt-1 text-xs leading-5 text-muted-foreground"
+                                >
+                                    {{ insight.explanation }}
+                                </p>
+                                <p
+                                    class="mt-2 text-xs font-medium text-foreground"
+                                >
+                                    Next: {{ insight.recommendation }}
+                                </p>
+                                <div
+                                    v-if="insight.actions?.length"
+                                    class="mt-3 flex flex-wrap gap-2"
+                                >
+                                    <Button
+                                        v-for="action in insight.actions"
+                                        :key="action.key"
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        class="h-7 px-2 text-[11px]"
+                                        :disabled="
+                                            activeInsightAction ===
+                                            insight.id + ':' + action.key
+                                        "
+                                        :title="action.description"
+                                        @click="
+                                            runInsightAction(insight, action)
+                                        "
+                                    >
+                                        {{
+                                            activeInsightAction ===
+                                            insight.id + ':' + action.key
+                                                ? 'Working…'
+                                                : action.label
+                                        }}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
                 </div>
             </section>
 
@@ -704,6 +953,73 @@ onBeforeUnmount(() => {
             </div>
 
             <section
+                v-if="analytics.entryPages.length || analytics.exitPages.length"
+                class="grid gap-3 lg:grid-cols-2"
+                aria-label="Entry and exit pages"
+            >
+                <Card class="p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h2 class="font-medium">Entry pages</h2>
+                            <p class="mt-1 text-xs text-muted-foreground">
+                                Where visits begin
+                            </p>
+                        </div>
+                    </div>
+                    <div class="mt-4 space-y-2">
+                        <div
+                            v-for="page in analytics.entryPages.slice(0, 5)"
+                            :key="page.label"
+                            class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent/70"
+                        >
+                            <span class="truncate font-mono text-xs">{{
+                                page.label
+                            }}</span>
+                            <span
+                                class="font-mono text-xs text-muted-foreground tabular-nums"
+                                >{{ formatNumber(page.value) }}</span
+                            >
+                        </div>
+                        <p
+                            v-if="!analytics.entryPages.length"
+                            class="text-sm text-muted-foreground"
+                        >
+                            No entry pages in this period.
+                        </p>
+                    </div>
+                </Card>
+                <Card class="p-5">
+                    <div>
+                        <h2 class="font-medium">Exit pages</h2>
+                        <p class="mt-1 text-xs text-muted-foreground">
+                            Where visits end
+                        </p>
+                    </div>
+                    <div class="mt-4 space-y-2">
+                        <div
+                            v-for="page in analytics.exitPages.slice(0, 5)"
+                            :key="page.label"
+                            class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent/70"
+                        >
+                            <span class="truncate font-mono text-xs">{{
+                                page.label
+                            }}</span>
+                            <span
+                                class="font-mono text-xs text-muted-foreground tabular-nums"
+                                >{{ formatNumber(page.value) }}</span
+                            >
+                        </div>
+                        <p
+                            v-if="!analytics.exitPages.length"
+                            class="text-sm text-muted-foreground"
+                        >
+                            No exit pages in this period.
+                        </p>
+                    </div>
+                </Card>
+            </section>
+
+            <section
                 class="grid gap-3 lg:grid-cols-2"
                 aria-label="Traffic and audience details"
             >
@@ -721,6 +1037,85 @@ onBeforeUnmount(() => {
                     :icon="UsersRound"
                     :tabs="audienceTabs"
                 />
+            </section>
+
+            <section
+                v-if="
+                    analytics.importantActions.length || analytics.goals.length
+                "
+                class="grid gap-3 lg:grid-cols-2"
+                aria-label="Outcomes"
+            >
+                <Card v-if="analytics.importantActions.length" class="p-5"
+                    ><div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="font-medium">Important actions</h2>
+                            <p class="mt-1 text-xs text-muted-foreground">
+                                Clicks against views on the matching page.
+                            </p>
+                        </div>
+                        <Link
+                            :href="actionsIndex(project.id).url"
+                            class="text-xs text-muted-foreground underline"
+                            >Manage</Link
+                        >
+                    </div>
+                    <div class="mt-4 space-y-3">
+                        <div
+                            v-for="action in analytics.importantActions"
+                            :key="action.id"
+                            class="flex items-center justify-between text-sm"
+                        >
+                            <span>{{ action.name }}</span
+                            ><span
+                                class="font-mono text-xs text-muted-foreground"
+                                >{{ formatNumber(action.views) }} views ·
+                                {{ formatNumber(action.clicks) }} clicks ·
+                                {{ formatPercentage(action.ctr) }}</span
+                            >
+                        </div>
+                    </div></Card
+                >
+                <Card v-if="analytics.goals.length" class="p-5"
+                    ><div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="font-medium">Goals</h2>
+                            <p class="mt-1 text-xs text-muted-foreground">
+                                Session-based outcomes worth measuring.
+                            </p>
+                        </div>
+                        <div class="flex gap-3 text-xs text-muted-foreground">
+                            <Link
+                                :href="goalsIndex(project.id).url"
+                                class="underline"
+                                >Manage</Link
+                            ><Link
+                                :href="funnelsIndex(project.id).url"
+                                class="underline"
+                                >Funnels</Link
+                            >
+                        </div>
+                    </div>
+                    <div class="mt-4 space-y-3">
+                        <div
+                            v-for="goal in analytics.goals"
+                            :key="goal.id"
+                            class="flex items-center justify-between text-sm"
+                        >
+                            <span>{{ goal.name }}</span
+                            ><span
+                                class="font-mono text-xs text-muted-foreground"
+                                >{{ formatNumber(goal.conversions) }} ·
+                                {{
+                                    formatPercentage(goal.conversionRate)
+                                }}</span
+                            >
+                            <span class="text-[11px] text-muted-foreground">
+                                {{ trendLabel(goal.trend.change) }} vs prior
+                            </span>
+                        </div>
+                    </div></Card
+                >
             </section>
         </div>
     </TooltipProvider>

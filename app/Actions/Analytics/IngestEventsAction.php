@@ -7,6 +7,7 @@ use App\Models\AnalyticsSession;
 use App\Models\Project;
 use App\Services\Analytics\BotDetector;
 use App\Services\Analytics\EventNormalizer;
+use App\Services\Analytics\GoalConversionService;
 use App\Services\Analytics\SessionIdentifier;
 use App\Services\Analytics\VisitorIdentifier;
 use Carbon\CarbonImmutable;
@@ -22,6 +23,7 @@ class IngestEventsAction
         private readonly SessionIdentifier $sessionIdentifier,
         private readonly EventNormalizer $eventNormalizer,
         private readonly BotDetector $botDetector,
+        private readonly GoalConversionService $goalConversionService,
     ) {}
 
     /**
@@ -99,6 +101,7 @@ class IngestEventsAction
                 $visitorId,
                 $normalized,
             );
+            $this->goalConversionService->record($project, $sessionId, $normalized);
         }
 
         return [
@@ -126,13 +129,14 @@ class IngestEventsAction
                 $occurredAt = $event['occurred_at'] instanceof CarbonImmutable
                     ? $event['occurred_at']
                     : CarbonImmutable::parse((string) $event['occurred_at']);
+                $isPageView = $event['event_name'] === 'page_view';
 
                 if (! $session->exists) {
                     $session->visitor_id = $visitorId;
                     $session->started_at = $occurredAt;
                     $session->last_seen_at = $occurredAt;
-                    $session->entry_path = $event['path'];
-                    $session->exit_path = $event['path'];
+                    $session->entry_path = $isPageView ? $event['path'] : null;
+                    $session->exit_path = $isPageView ? $event['path'] : null;
                     $session->referrer_host = $event['referrer_host'];
                     $session->country = $event['country'];
                     $session->device = $event['device'];
@@ -147,6 +151,12 @@ class IngestEventsAction
                     $session->country = $event['country'];
                 }
 
+                foreach (['referrer_host', 'utm_source', 'utm_medium', 'utm_campaign'] as $attributionField) {
+                    if ($session->{$attributionField} === null && $event[$attributionField] !== null) {
+                        $session->{$attributionField} = $event[$attributionField];
+                    }
+                }
+
                 if (in_array($session->browser, [null, 'Other'], true) && $event['browser'] !== 'Other') {
                     $session->browser = $event['browser'];
                 }
@@ -157,14 +167,18 @@ class IngestEventsAction
 
                 if ($lastSeenAt === null || $occurredAt->gt($lastSeenAt)) {
                     $session->last_seen_at = $occurredAt;
-                    $session->exit_path = $event['path'];
+                    if ($isPageView) {
+                        $session->exit_path = $event['path'];
+                    }
                 }
 
-                $isPageView = $event['event_name'] === 'page_view';
+                if ($isPageView && $session->entry_path === null) {
+                    $session->entry_path = $event['path'];
+                }
                 $session->pageviews = (int) $session->pageviews + ($isPageView ? 1 : 0);
                 $session->custom_events = (int) $session->custom_events + ($isPageView ? 0 : 1);
                 $startedAt = CarbonImmutable::parse((string) $session->started_at);
-                $duration = (int) $startedAt->diffInSeconds($occurredAt);
+                $duration = $occurredAt->getTimestamp() - $startedAt->getTimestamp();
                 $session->duration_seconds = max(0, $duration);
                 $session->is_bounce = $session->pageviews <= 1 && $session->custom_events === 0;
                 $session->save();

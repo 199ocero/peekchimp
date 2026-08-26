@@ -1,6 +1,12 @@
 <?php
 
+use App\Http\Controllers\AiTrafficController;
+use App\Http\Controllers\AiVisibilityController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\FunnelController;
+use App\Http\Controllers\GoalController;
+use App\Http\Controllers\ImportantActionController;
+use App\Http\Controllers\InsightActionController;
 use App\Http\Controllers\InvitationAcceptanceController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PublicDashboardController;
@@ -44,10 +50,38 @@ Route::middleware(['auth', 'verified', 'website.configured'])->group(function ()
         ->name('websites.sharing.update');
     Route::post('websites/{project}/sharing/rotate', [WebsiteSharingController::class, 'rotate'])
         ->name('websites.sharing.rotate');
+    Route::get('websites/{project}/actions', [ImportantActionController::class, 'index'])
+        ->name('websites.actions.index');
+    Route::post('websites/{project}/actions', [ImportantActionController::class, 'store'])
+        ->name('websites.actions.store');
+    Route::patch('websites/{project}/actions/{action}', [ImportantActionController::class, 'update'])
+        ->name('websites.actions.update');
+    Route::delete('websites/{project}/actions/{action}', [ImportantActionController::class, 'destroy'])
+        ->name('websites.actions.destroy');
+    Route::get('websites/{project}/goals', [GoalController::class, 'index'])
+        ->name('websites.goals.index');
+    Route::post('websites/{project}/goals', [GoalController::class, 'store'])
+        ->name('websites.goals.store');
+    Route::patch('websites/{project}/goals/{goal}', [GoalController::class, 'update'])
+        ->name('websites.goals.update');
+    Route::delete('websites/{project}/goals/{goal}', [GoalController::class, 'destroy'])
+        ->name('websites.goals.destroy');
+    Route::get('websites/{project}/funnels', [FunnelController::class, 'index'])
+        ->name('websites.funnels.index');
+    Route::post('websites/{project}/funnels', [FunnelController::class, 'store'])
+        ->name('websites.funnels.store');
+    Route::patch('websites/{project}/funnels/{funnel}', [FunnelController::class, 'update'])
+        ->name('websites.funnels.update');
+    Route::delete('websites/{project}/funnels/{funnel}', [FunnelController::class, 'destroy'])
+        ->name('websites.funnels.destroy');
 });
 
 Route::middleware(['auth', 'verified', 'website.configured'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+    Route::get('websites/{project}/ai-traffic', AiTrafficController::class)->name('websites.ai-traffic');
+    Route::get('websites/{project}/ai-visibility', [AiVisibilityController::class, 'show'])->name('websites.ai-visibility.show');
+    Route::post('websites/{project}/ai-visibility/scan', [AiVisibilityController::class, 'scan'])->name('websites.ai-visibility.scan');
+    Route::post('insights/{insight}/actions', [InsightActionController::class, 'store'])->name('insights.actions.store');
 });
 
 require __DIR__.'/settings.php';

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -87,6 +88,12 @@ class User extends Authenticatable
     public function currentProject(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'current_project_id');
+    }
+
+    /** @return HasOne<WorkspaceAiSetting, $this> */
+    public function workspaceAiSetting(): HasOne
+    {
+        return $this->hasOne(WorkspaceAiSetting::class, 'workspace_owner_id');
     }
 
     public function hasCompletedWebsiteSetup(): bool

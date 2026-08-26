@@ -3,6 +3,7 @@ import {
     FileQuestion,
     Globe2,
     Laptop,
+    Monitor,
     MousePointerClick,
     Smartphone,
     Tablet,
@@ -14,7 +15,7 @@ import BrandLogo from '@/components/dashboard/BrandLogo.vue';
 import { Card } from '@/components/ui/card';
 
 type BreakdownKind =
-    'source' | 'campaign' | 'ai' | 'country' | 'device' | 'browser';
+    'source' | 'campaign' | 'ai' | 'country' | 'device' | 'browser' | 'os';
 
 type BreakdownItem = { label: string; value: number };
 type BreakdownTab = {
@@ -229,6 +230,11 @@ function activateAdjacentTab(event: KeyboardEvent, offset: number): void {
                                     activeTab.kind === 'browser'
                                 "
                                 :name="item.label"
+                            />
+                            <Monitor
+                                v-else-if="activeTab.kind === 'os'"
+                                class="size-4 text-muted-foreground"
+                                aria-hidden="true"
                             />
                             <span
                                 v-else-if="activeTab.kind === 'country'"

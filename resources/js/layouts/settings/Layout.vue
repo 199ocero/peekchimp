@@ -10,6 +10,7 @@ import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editMembers } from '@/routes/members';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
+import { edit as editAi } from '@/routes/settings/ai';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -27,7 +28,10 @@ const sidebarNavItems = computed<NavItem[]>(() => [
         href: editAppearance(),
     },
     ...(page.props.auth.user?.is_admin
-        ? [{ title: 'Members', href: editMembers() }]
+        ? [
+              { title: 'Members', href: editMembers() },
+              { title: 'AI insights', href: editAi() },
+          ]
         : []),
 ]);
 

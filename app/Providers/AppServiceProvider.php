@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Contracts\Analytics\InsightActionProvider;
 use App\Models\User;
+use App\Services\Analytics\InternalInsightActionProvider;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
@@ -21,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(InsightActionProvider::class, InternalInsightActionProvider::class);
     }
 
     /**

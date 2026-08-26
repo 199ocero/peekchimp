@@ -31,7 +31,7 @@ class DashboardController extends Controller
         }
 
         $filters = $request->only([
-            'range', 'from', 'to', 'country', 'device', 'browser', 'referrer', 'page', 'utm_campaign',
+            'range', 'from', 'to', 'country', 'device', 'browser', 'referrer', 'page', 'utm_campaign', 'refresh',
         ]);
         $analytics = $this->dashboardQuery->run($project, $filters);
 

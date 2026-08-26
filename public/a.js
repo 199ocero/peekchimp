@@ -18,6 +18,7 @@
     var flushTimer = null;
     var lastPath = null;
     var sessionKey = 'peekchimp_session';
+    var sessionActivityKey = 'peekchimp_session_activity';
     var sessionId = null;
 
     try {
@@ -28,6 +29,28 @@
         }
     } catch (_) {
         sessionId = randomId();
+    }
+
+    function ensureSession() {
+        var now = Date.now();
+        var lastActivity = 0;
+
+        try {
+            lastActivity = parseInt(window.sessionStorage.getItem(sessionActivityKey) || '0', 10);
+        } catch (_) {
+            lastActivity = 0;
+        }
+
+        if (!lastActivity || now - lastActivity > 30 * 60 * 1000) {
+            sessionId = randomId();
+            try {
+                window.sessionStorage.setItem(sessionKey, sessionId);
+            } catch (_) {}
+        }
+
+        try {
+            window.sessionStorage.setItem(sessionActivityKey, String(now));
+        } catch (_) {}
     }
 
     function randomId() {
@@ -64,6 +87,7 @@
     }
 
     function event(name, properties) {
+        ensureSession();
         var query = new URLSearchParams(window.location.search);
         var data = cleanProperties(properties);
         var item = {
@@ -71,6 +95,7 @@
             event_name: name,
             platform: 'web',
             session_id: sessionId,
+            occurred_at: new Date().toISOString(),
             path: window.location.pathname + window.location.search,
             referrer: document.referrer || undefined,
             utm_source: query.get('utm_source') || undefined,

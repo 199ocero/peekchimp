@@ -21,7 +21,10 @@ class GoalFactory extends Factory
         return [
             'project_id' => Project::factory(),
             'name' => 'Signup',
+            'type' => 'event',
             'event_name' => 'signup',
+            'path' => null,
+            'path_operator' => 'exact',
             'property_match' => null,
             'is_active' => true,
         ];

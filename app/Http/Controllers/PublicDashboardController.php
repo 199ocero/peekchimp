@@ -28,7 +28,7 @@ class PublicDashboardController extends Controller
         $range = $request->string('range')->toString();
         $range = in_array($range, ['today', 'yesterday', '7d', '30d', 'month'], true) ? $range : '7d';
         $analytics = $publicDashboardData->build(
-            $dashboardQuery->run($project, ['range' => $range]),
+            $dashboardQuery->run($project, ['range' => $range], false),
             $sections,
         );
 

@@ -93,4 +93,34 @@ class Project extends Model
     {
         return $this->hasMany(Goal::class);
     }
+
+    /** @return HasMany<AnalyticsRollup, $this> */
+    public function analyticsRollups(): HasMany
+    {
+        return $this->hasMany(AnalyticsRollup::class);
+    }
+
+    /** @return HasMany<Insight, $this> */
+    public function insights(): HasMany
+    {
+        return $this->hasMany(Insight::class);
+    }
+
+    /** @return HasMany<ImportantAction, $this> */
+    public function importantActions(): HasMany
+    {
+        return $this->hasMany(ImportantAction::class);
+    }
+
+    /** @return HasMany<Funnel, $this> */
+    public function funnels(): HasMany
+    {
+        return $this->hasMany(Funnel::class);
+    }
+
+    /** @return HasMany<AiVisibilityScan, $this> */
+    public function aiVisibilityScans(): HasMany
+    {
+        return $this->hasMany(AiVisibilityScan::class);
+    }
 }

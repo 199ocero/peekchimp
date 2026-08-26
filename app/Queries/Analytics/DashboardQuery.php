@@ -2,27 +2,41 @@
 
 namespace App\Queries\Analytics;
 
+use App\Jobs\GenerateInsightRecommendations;
 use App\Models\AnalyticsEvent;
 use App\Models\AnalyticsSession;
 use App\Models\Project;
 use App\Services\Analytics\AiReferralClassifier;
+use App\Services\Analytics\AnalyticsRollupReader;
 use App\Services\Analytics\DashboardInsightBuilder;
+use App\Services\Analytics\FunnelAnalyticsService;
+use App\Services\Analytics\GoalAnalyticsService;
+use App\Services\Analytics\ImportantActionAnalyticsService;
+use App\Services\Analytics\InsightGenerationService;
+use App\Services\Analytics\SourceGrouping;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class DashboardQuery
 {
     public function __construct(
         private readonly AiReferralClassifier $aiReferralClassifier,
+        private readonly SourceGrouping $sourceGrouping,
         private readonly DashboardInsightBuilder $dashboardInsightBuilder,
+        private readonly InsightGenerationService $insightGenerationService,
+        private readonly GoalAnalyticsService $goalAnalyticsService,
+        private readonly ImportantActionAnalyticsService $importantActionAnalyticsService,
+        private readonly FunnelAnalyticsService $funnelAnalyticsService,
+        private readonly AnalyticsRollupReader $rollupReader,
     ) {}
 
     /**
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
-    public function run(Project $project, array $filters = []): array
+    public function run(Project $project, array $filters = [], bool $withInsights = true): array
     {
         [$from, $to, $rangeKey, $rangeLabel] = $this->range($project, $filters);
         $normalizedFilters = array_filter([
@@ -33,17 +47,24 @@ class DashboardQuery
             'page' => $filters['page'] ?? null,
             'utm_campaign' => $filters['utm_campaign'] ?? null,
         ]);
-        $cacheKey = 'dashboard:v7:'.$project->getKey().':'.$rangeKey.':'.$from->timestamp.':'.$to->timestamp.':'.sha1((string) json_encode($normalizedFilters));
+        $cacheBust = (string) ($filters['refresh'] ?? '');
+        $cacheKey = 'dashboard:v7:'.$project->getKey().':'.$rangeKey.':'.$from->timestamp.':'.$to->timestamp.':'.sha1((string) json_encode($normalizedFilters)).':'.($withInsights ? 'insights' : 'public').':'.$cacheBust;
 
-        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($project, $from, $to, $rangeKey, $rangeLabel, $normalizedFilters): array {
+        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($project, $from, $to, $rangeKey, $rangeLabel, $normalizedFilters, $withInsights): array {
             $activeAt = CarbonImmutable::now('UTC');
             $pageviews = $this->events($project, $from, $to, $normalizedFilters)->where('event_name', 'page_view')->count();
-            $visitors = $this->events($project, $from, $to, $normalizedFilters)->distinct('visitor_id')->count('visitor_id');
+            $visitors = $this->events($project, $from, $to, $normalizedFilters)
+                ->where('event_name', 'page_view')
+                ->distinct('visitor_id')
+                ->count('visitor_id');
             $sessionSummary = $this->sessionSummary($this->sessions($project, $from, $to, $normalizedFilters));
             $sessions = $sessionSummary['sessions'];
             $bounces = $sessionSummary['bounces'];
             $averageDuration = $sessionSummary['averageDuration'];
             $singlePageRate = $sessions > 0 ? round(($bounces / $sessions) * 100, 1) : 0;
+            $conversionOverview = $this->conversionOverview($project, $from, $to, $normalizedFilters);
+            // Keep the legacy referrer series for compatibility; the actionable
+            // source grouping below uses session visits rather than page loads.
             $referrers = $this->breakdown($project, $from, $to, $normalizedFilters, 'referrer_host', 'Direct');
             $timeseries = $this->timeseries($project, $from, $to, $normalizedFilters, $rangeKey);
             $metrics = [
@@ -54,7 +75,30 @@ class DashboardQuery
                 'bounceRate' => $singlePageRate,
                 'averageDuration' => round($averageDuration),
                 'viewsPerVisitor' => $visitors > 0 ? round($pageviews / $visitors, 2) : 0,
+                'conversions' => $conversionOverview['conversions'],
+                'conversionRate' => $conversionOverview['conversionRate'],
             ];
+
+            [$previousFrom, $previousTo] = $this->previousRange($project, $from, $to, $activeAt);
+            $actionableInsights = [];
+            if ($withInsights) {
+                $actionableInsights = $this->insightGenerationService->generate(
+                    $project,
+                    $from,
+                    $to,
+                    $normalizedFilters,
+                    $previousFrom,
+                    $previousTo,
+                );
+                if ($actionableInsights !== []) {
+                    GenerateInsightRecommendations::dispatch(
+                        $project,
+                        $actionableInsights,
+                        $from->toIso8601String(),
+                        $to->toIso8601String(),
+                    );
+                }
+            }
 
             return [
                 'range' => [
@@ -68,13 +112,31 @@ class DashboardQuery
                 'metricTrends' => $this->metricTrends($project, $from, $to, $normalizedFilters, $rangeKey, $metrics, $timeseries, $activeAt),
                 'timeseries' => $timeseries,
                 'topPages' => $this->breakdown($project, $from, $to, $normalizedFilters, 'path', 'Other'),
+                'entryPages' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'entry_path', 'Other'),
+                'exitPages' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'exit_path', 'Other'),
                 'referrers' => $referrers,
                 'countryVisits' => $this->countryVisits($project, $from, $to, $normalizedFilters),
-                'devices' => $this->breakdown($project, $from, $to, $normalizedFilters, 'device', 'Unknown'),
-                'browsers' => $this->breakdown($project, $from, $to, $normalizedFilters, 'browser', 'Unknown'),
-                'campaigns' => $this->breakdown($project, $from, $to, $normalizedFilters, 'utm_campaign', 'None'),
+                'sources' => $this->sourceBreakdown($project, $from, $to, $normalizedFilters),
+                'devices' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'device', 'Unknown'),
+                'browsers' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'browser', 'Unknown'),
+                'operatingSystems' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'operating_system', 'Unknown'),
+                'campaigns' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'utm_campaign', 'None'),
+                'mediums' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'utm_medium', 'Direct'),
+                'utmSources' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'utm_source', 'None'),
                 'aiReferrals' => $this->aiReferrals($project, $from, $to, $normalizedFilters),
+                'aiTraffic' => $this->aiTraffic($project, $from, $to, $normalizedFilters),
                 'insights' => $this->dashboardInsightBuilder->build($sessions, $singlePageRate, $referrers),
+                'whatChanged' => $actionableInsights,
+                'actionableInsights' => $actionableInsights,
+                'goals' => $conversionOverview['goals'],
+                'importantActions' => $this->importantActionAnalyticsService->summarize($project, $from, $to),
+                'funnels' => $project->funnels()->where('is_active', true)->with('steps')->get()->map(
+                    fn ($funnel): array => [
+                        'id' => $funnel->getKey(),
+                        'name' => $funnel->name,
+                        ...$this->funnelAnalyticsService->summary($funnel, $from, $to),
+                    ],
+                )->values()->all(),
             ];
         });
     }
@@ -96,8 +158,8 @@ class DashboardQuery
             ->where(function (Builder $query) use ($referrerHosts, $utmSources): void {
                 foreach ($referrerHosts as $host) {
                     $query
-                        ->orWhere('referrer_host', $host)
-                        ->orWhere('referrer_host', 'like', '%.'.$host);
+                        ->orWhereRaw('LOWER(referrer_host) = ?', [$host])
+                        ->orWhereRaw('LOWER(referrer_host) LIKE ?', ['%.'.$host]);
                 }
 
                 foreach ($utmSources as $source) {
@@ -141,6 +203,88 @@ class DashboardQuery
         return [
             'totalVisits' => (int) array_sum($counts),
             'sources' => $sources,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array{visitors: int, visits: int, pageviews: int, conversions: int, previousVisits: int, change: float|null, sources: array<int, array{label: string, value: int}>, pages: array<int, array{label: string, value: int}>}
+     */
+    private function aiTraffic(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters): array
+    {
+        if ($this->aiReferralClassifier->referrerHosts() === [] && $this->aiReferralClassifier->utmSources() === []) {
+            return ['visitors' => 0, 'visits' => 0, 'pageviews' => 0, 'conversions' => 0, 'previousVisits' => 0, 'change' => 0.0, 'sources' => [], 'pages' => []];
+        }
+
+        [$previousFrom, $previousTo] = $this->previousRange($project, $from, $to, CarbonImmutable::now('UTC'));
+        $previousVisits = $this->aiReferrals($project, $previousFrom, $previousTo, $filters)['totalVisits'];
+
+        $sessions = $this->sessions($project, $from, $to, $filters)
+            ->where(function (Builder $query): void {
+                foreach ($this->aiReferralClassifier->referrerHosts() as $host) {
+                    $query
+                        ->orWhereRaw('LOWER(referrer_host) = ?', [$host])
+                        ->orWhereRaw('LOWER(referrer_host) LIKE ?', ['%.'.$host]);
+                }
+                foreach ($this->aiReferralClassifier->utmSources() as $source) {
+                    $query->orWhereRaw('LOWER(utm_source) = ?', [$source]);
+                }
+            });
+        $sessionRows = $sessions->get(['session_id', 'visitor_id', 'referrer_host', 'utm_source']);
+        $sessionIds = [];
+        $sourceCounts = [];
+        $visitorIds = [];
+
+        foreach ($sessionRows as $session) {
+            $provider = $this->aiReferralClassifier->classify($session->referrer_host, $session->utm_source);
+            if ($provider === null) {
+                continue;
+            }
+            $sessionIds[] = (string) $session->session_id;
+            $visitorIds[(string) $session->visitor_id] = true;
+            $label = $this->aiReferralClassifier->label($provider);
+            $sourceCounts[$label] = ($sourceCounts[$label] ?? 0) + 1;
+        }
+
+        if ($sessionIds === []) {
+            return [
+                'visitors' => 0,
+                'visits' => 0,
+                'pageviews' => 0,
+                'conversions' => 0,
+                'previousVisits' => $previousVisits,
+                'change' => $previousVisits > 0 ? -100.0 : 0.0,
+                'sources' => [],
+                'pages' => [],
+            ];
+        }
+
+        $events = $this->events($project, $from, $to, $filters)
+            ->whereIn('session_id', array_values(array_unique($sessionIds)));
+        $pageviews = (clone $events)->where('event_name', 'page_view')->count();
+        $pages = (clone $events)->where('event_name', 'page_view')
+            ->select('path')->selectRaw('COUNT(*) AS total')->groupBy('path')->orderByDesc('total')->limit(8)->get()
+            ->map(fn ($row): array => ['label' => $row->getAttribute('path') ?: 'Other', 'value' => (int) $row->getAttribute('total')])->all();
+        $sources = collect($sourceCounts)->map(fn (int $value, string $label): array => ['label' => $label, 'value' => $value])->sortByDesc('value')->values()->all();
+        $conversions = (int) DB::table('goal_conversions')
+            ->where('project_id', $project->getKey())
+            ->whereIn('session_id', array_values(array_unique($sessionIds)))
+            ->whereBetween('occurred_at', [$this->databaseTimestamp($from), $this->databaseTimestamp($to)])
+            ->count();
+        $currentVisits = count(array_unique($sessionIds));
+        $change = $previousVisits === 0
+            ? null
+            : round((($currentVisits - $previousVisits) / $previousVisits) * 100, 1);
+
+        return [
+            'visitors' => count($visitorIds),
+            'visits' => $currentVisits,
+            'pageviews' => (int) $pageviews,
+            'conversions' => $conversions,
+            'previousVisits' => $previousVisits,
+            'change' => $change,
+            'sources' => $sources,
+            'pages' => $pages,
         ];
     }
 
@@ -206,6 +350,7 @@ class DashboardQuery
             ->where('event_name', 'page_view')
             ->count();
         $previousVisitors = $this->events($project, $previousFrom, $previousTo, $filters)
+            ->where('event_name', 'page_view')
             ->distinct('visitor_id')
             ->count('visitor_id');
         $previousSessionSummary = $this->sessionSummary($this->sessions($project, $previousFrom, $previousTo, $filters));
@@ -237,6 +382,11 @@ class DashboardQuery
                 $metrics['pageviews'],
                 $previousPageviews,
                 array_column($timeseries, 'pageviews'),
+            ),
+            'sessions' => $this->metricTrend(
+                $metrics['sessions'],
+                $previousSessions,
+                array_column($sessionSeries['sessions'], 'sessions'),
             ),
             'bounceRate' => $this->metricTrend(
                 $metrics['bounceRate'],
@@ -278,7 +428,7 @@ class DashboardQuery
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return array{bounceRate: array<int, float>, averageDuration: array<int, int>}
+     * @return array{sessions: array<int, int>, bounceRate: array<int, float>, averageDuration: array<int, int>}
      */
     private function sessionMetricSeries(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters, string $rangeKey): array
     {
@@ -324,6 +474,10 @@ class DashboardQuery
         }
 
         return [
+            'sessions' => array_map(
+                fn (array $bucket): int => $bucket['sessions'],
+                array_values($buckets),
+            ),
             'bounceRate' => array_map(
                 fn (array $bucket): float => $bucket['sessions'] > 0
                     ? round(($bucket['bounces'] / $bucket['sessions']) * 100, 1)
@@ -455,6 +609,17 @@ class DashboardQuery
     private function timeseries(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters, string $rangeKey): array
     {
         $usesHourlyBuckets = $this->usesHourlyBuckets($rangeKey);
+        $rollupSeries = $this->rollupReader->timeSeries(
+            $project,
+            $from,
+            $to,
+            $usesHourlyBuckets ? 'hour' : 'day',
+            $filters,
+        );
+        if ($rollupSeries !== null) {
+            return $rollupSeries;
+        }
+
         $buckets = [];
         $cursor = $usesHourlyBuckets ? $from->startOfHour() : $from->startOfDay();
         $bucketEnd = $usesHourlyBuckets ? $to->startOfHour() : $to->startOfDay();
@@ -534,6 +699,52 @@ class DashboardQuery
                 'label' => $row->getAttribute($column) ?: $fallback,
                 'value' => (int) $row->getAttribute('total'),
             ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array{label: string, value: int}>
+     */
+    private function sessionBreakdown(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters, string $column, string $fallback): array
+    {
+        return $this->sessions($project, $from, $to, $filters)
+            ->select($column)
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy($column)
+            ->orderByDesc('total')
+            ->orderBy($column)
+            ->limit(8)
+            ->get()
+            ->map(fn ($row): array => [
+                'label' => $row->getAttribute($column) ?: $fallback,
+                'value' => (int) $row->getAttribute('total'),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array{label: string, value: int}>
+     */
+    private function sourceBreakdown(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters): array
+    {
+        $counts = [];
+        $sessions = $this->sessions($project, $from, $to, $filters)
+            ->get(['referrer_host', 'utm_source', 'utm_medium']);
+
+        foreach ($sessions as $session) {
+            $source = $this->sourceGrouping->classify($session->referrer_host, $session->utm_source, $session->utm_medium)['source'];
+            $counts[$source] = ($counts[$source] ?? 0) + 1;
+        }
+
+        arsort($counts);
+
+        return collect($counts)
+            ->take(8)
+            ->map(fn (int $value, string $label): array => ['label' => $label, 'value' => $value])
             ->values()
             ->all();
     }
@@ -646,5 +857,33 @@ class DashboardQuery
         }
 
         return $query;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array{conversions: int, conversionRate: float, goals: array<int, array<string, mixed>>}
+     */
+    private function conversionOverview(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters = []): array
+    {
+        $visits = $this->sessions($project, $from, $to, $filters)->count();
+        $goals = [];
+        $conversions = 0;
+
+        foreach ($project->goals()->where('is_active', true)->get() as $goal) {
+            $summary = $this->goalAnalyticsService->summary($goal, $from, $to, $filters);
+            $conversions += $summary['conversions'];
+            $goals[] = [
+                'id' => $goal->getKey(),
+                'name' => $goal->name,
+                'type' => $goal->type ?: 'event',
+                ...$summary,
+            ];
+        }
+
+        return [
+            'conversions' => $conversions,
+            'conversionRate' => $visits > 0 ? round(($conversions / $visits) * 100, 2) : 0.0,
+            'goals' => $goals,
+        ];
     }
 }

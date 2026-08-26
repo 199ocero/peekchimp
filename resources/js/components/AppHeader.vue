@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { Monitor, Moon, Sun } from '@lucide/vue';
 import { computed } from 'vue';
+import AppearanceMenu from '@/components/AppearanceMenu.vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -9,13 +9,10 @@ import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuRadioGroup,
-    DropdownMenuRadioItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import UserMenuContent from '@/components/UserMenuContent.vue';
 import WebsiteSwitcher from '@/components/WebsiteSwitcher.vue';
-import { useAppearance } from '@/composables/useAppearance';
 import { getInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem } from '@/types';
@@ -30,13 +27,6 @@ const props = withDefaults(defineProps<Props>(), {
 
 const page = usePage();
 const auth = computed(() => page.props.auth);
-const { appearance, updateAppearance } = useAppearance();
-
-const appearanceOptions = [
-    { value: 'light', Icon: Sun, label: 'Light' },
-    { value: 'dark', Icon: Moon, label: 'Dark' },
-    { value: 'system', Icon: Monitor, label: 'System' },
-] as const;
 </script>
 
 <template>
@@ -63,43 +53,7 @@ const appearanceOptions = [
                 <WebsiteSwitcher />
 
                 <div class="ml-auto flex items-center gap-1">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger :as-child="true">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                class="size-8 cursor-pointer"
-                            >
-                                <Sun
-                                    v-if="appearance === 'light'"
-                                    class="size-4"
-                                />
-                                <Moon
-                                    v-else-if="appearance === 'dark'"
-                                    class="size-4"
-                                />
-                                <Monitor v-else class="size-4" />
-                                <span class="sr-only">Change appearance</span>
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" class="w-36">
-                            <DropdownMenuRadioGroup :model-value="appearance">
-                                <DropdownMenuRadioItem
-                                    v-for="option in appearanceOptions"
-                                    :key="option.value"
-                                    :value="option.value"
-                                    class="cursor-pointer"
-                                    @select="updateAppearance(option.value)"
-                                >
-                                    <component
-                                        :is="option.Icon"
-                                        class="size-4"
-                                    />
-                                    {{ option.label }}
-                                </DropdownMenuRadioItem>
-                            </DropdownMenuRadioGroup>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    <AppearanceMenu />
 
                     <DropdownMenu>
                         <DropdownMenuTrigger :as-child="true">

@@ -64,6 +64,21 @@ test('public dashboards expose only selected sections', function () {
         );
 });
 
+test('public dashboards use the compact dual-theme analytics layout', function () {
+    $dashboard = file_get_contents(resource_path('js/pages/public/Dashboard.vue'));
+    $overview = file_get_contents(resource_path('js/components/dashboard/DashboardOverview.vue'));
+
+    expect($dashboard.$overview)
+        ->toContain('<AppearanceMenu />')
+        ->toContain('<DashboardOverview')
+        ->toContain('Shared dashboard analysis')
+        ->toContain("hasSection('pages')")
+        ->toContain("hasSection('acquisition')")
+        ->toContain("hasSection('audience')")
+        ->toContain('analysisTabs.length > 1')
+        ->not->toContain('MetricTrendCard');
+});
+
 test('public links can be disabled and re-enabled without changing their URL', function () {
     $user = User::factory()->withVerifiedWebsite()->create();
     $project = $user->projects()->sole();

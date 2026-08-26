@@ -40,9 +40,9 @@ test('dashboard keeps the activity visualization without the installation prompt
 
 test('dashboard prioritizes helpful plain-language metrics', function () {
     $dashboardPage = file_get_contents(resource_path('js/pages/Dashboard.vue'));
-    $metricTrendCard = file_get_contents(resource_path('js/components/dashboard/MetricTrendCard.vue'));
+    $dashboardOverview = file_get_contents(resource_path('js/components/dashboard/DashboardOverview.vue'));
 
-    expect($dashboardPage.$metricTrendCard)
+    expect($dashboardPage.$dashboardOverview)
         ->toContain("label: 'Active now'")
         ->toContain('icon: Activity')
         ->toContain('Estimated unique visitors seen in the last five minutes.')
@@ -61,23 +61,22 @@ test('dashboard prioritizes helpful plain-language metrics', function () {
         ->toContain("label: 'Average visit time'")
         ->toContain('icon: Timer')
         ->toContain("detail: 'How long each visit lasted on average.'")
-        ->toContain('At a glance')
-        ->toContain('What stands out')
+        ->toContain('Focus')
+        ->toContain('Overview')
+        ->toContain('Primary metrics')
+        ->toContain('Engagement metrics')
+        ->toContain('Dashboard analysis')
+        ->toContain("{ id: 'insights', label: 'Insights' }")
+        ->toContain("{ id: 'pages', label: 'Pages' }")
+        ->toContain("{ id: 'outcomes', label: 'Outcomes' }")
         ->toContain('Acquisition')
         ->toContain('Audience')
         ->toContain('AI referrals')
         ->toContain('individual answers stay private')
-        ->toContain('{{ comparisonLabel }}: {{ previousValueLabel }}')
-        ->toContain('metric-sparkline-reveal')
-        ->toContain(':aria-label="`${label}: ${value}. More information`"')
-        ->toContain('<TooltipContent class="max-w-80 !text-wrap" side="top">')
-        ->not->toContain('{{ detail }} {{ comparisonLabel }}:')
-        ->toContain('flex items-start gap-3')
-        ->toContain('data-arrive min-w-0 flex-1')
-        ->toContain('flex flex-col items-start gap-1')
-        ->toContain("return 'text-success'")
-        ->toContain("return 'text-destructive'")
-        ->not->toContain('<Info')
+        ->toContain('primaryActionableInsight')
+        ->toContain("return improved ? 'text-success' : 'text-destructive'")
+        ->not->toContain('MetricTrendCard')
+        ->not->toContain('metric-sparkline-reveal')
         ->not->toContain('Visitor overview')
         ->not->toContain("label: 'Pageviews'")
         ->not->toContain("label: 'Unique visitors'");
@@ -112,7 +111,7 @@ test('app header keeps only compact website and account controls', function () {
         ->toContain('<WebsiteSwitcher />')
         ->toContain('aria-label="Peekchimp dashboard"')
         ->toContain('bg-sidebar-border/80')
-        ->toContain('Change appearance')
+        ->toContain('<AppearanceMenu />')
         ->not->toContain('mainNavItems')
         ->not->toContain('NavigationMenu');
 });

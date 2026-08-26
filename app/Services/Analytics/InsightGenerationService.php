@@ -16,6 +16,7 @@ class InsightGenerationService
 {
     public function __construct(
         private readonly AnalyticsComparisonService $comparison,
+        private readonly InsightPriority $insightPriority,
         private readonly SourceGrouping $sourceGrouping,
         private readonly FunnelAnalyticsService $funnelAnalytics,
         private readonly InsightActionService $insightActions,
@@ -125,7 +126,7 @@ class InsightGenerationService
             }
         }
 
-        usort($candidates, fn (array $a, array $b): int => abs((float) ($b['percentage_change'] ?? 0)) <=> abs((float) ($a['percentage_change'] ?? 0)));
+        $candidates = $this->insightPriority->sort($candidates);
         $candidates = array_slice($candidates, 0, (int) config('analytics.change_detection.max_candidates', 5));
 
         $results = [];

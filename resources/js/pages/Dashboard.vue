@@ -2,7 +2,6 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
     Activity,
-    BadgePercent,
     CircleCheck,
     CircleGauge,
     FileStack,
@@ -10,6 +9,7 @@ import {
     Lightbulb,
     Link2,
     LogOut,
+    MoreHorizontal,
     RefreshCw,
     ScanEye,
     Settings,
@@ -18,15 +18,19 @@ import {
     UserRound,
     UsersRound,
     Waypoints,
-    MousePointerClick,
 } from '@lucide/vue';
 import type { Component } from 'vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import DashboardBreakdownCard from '@/components/dashboard/DashboardBreakdownCard.vue';
-import DashboardTrafficChart from '@/components/dashboard/DashboardTrafficChart.vue';
-import MetricTrendCard from '@/components/dashboard/MetricTrendCard.vue';
+import DashboardOverview from '@/components/dashboard/DashboardOverview.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     Tooltip,
     TooltipContent,
@@ -285,6 +289,54 @@ const metricCards = computed<
     },
 ]);
 
+const primaryMetrics = computed(() => [
+    {
+        ...metricCards.value.find((metric) => metric.label === 'Visitors')!,
+        id: 'visitors',
+    },
+    {
+        ...metricCards.value.find((metric) => metric.label === 'Visits')!,
+        id: 'visits',
+    },
+    {
+        ...metricCards.value.find((metric) => metric.label === 'Views')!,
+        id: 'views',
+    },
+    {
+        id: 'conversions',
+        label: 'Conversions',
+        value: formatNumber(props.analytics.metrics.conversions),
+        detail: 'Completed goals during this period.',
+        currentValue: props.analytics.metrics.conversions,
+    },
+]);
+
+const secondaryMetrics = computed(() => [
+    {
+        ...metricCards.value.find((metric) => metric.label === 'Bounce rate')!,
+        id: 'bounce-rate',
+    },
+    {
+        ...metricCards.value.find(
+            (metric) => metric.label === 'Pages per visitor',
+        )!,
+        id: 'pages-per-visitor',
+    },
+    {
+        ...metricCards.value.find(
+            (metric) => metric.label === 'Average visit time',
+        )!,
+        id: 'average-visit-time',
+    },
+    {
+        id: 'conversion-rate',
+        label: 'Conversion rate',
+        value: formatPercentage(props.analytics.metrics.conversionRate),
+        detail: 'Share of visits that completed a goal.',
+        currentValue: props.analytics.metrics.conversionRate,
+    },
+]);
+
 const insightCards = computed(() =>
     props.analytics.insights.map((insight) => {
         if (insight.type === 'high_single_page_rate') {
@@ -369,6 +421,10 @@ const actionableInsights = computed(
     () =>
         props.analytics.actionableInsights ?? props.analytics.whatChanged ?? [],
 );
+const primaryActionableInsight = computed(
+    () => actionableInsights.value[0] ?? null,
+);
+const focusStatus = computed(() => insightCards.value[0] ?? null);
 const activeInsightAction = ref<string | null>(null);
 
 function runInsightAction(
@@ -440,16 +496,71 @@ const audienceTabs = computed(() => [
     },
 ]);
 
-function formatNumber(value: number): string {
-    return new Intl.NumberFormat().format(value);
-}
+type AnalysisTab =
+    'insights' | 'pages' | 'acquisition' | 'audience' | 'outcomes';
+type PageTab = 'popular' | 'entry' | 'exit';
 
-function trendLabel(change: number | null): string {
-    if (change === null) {
-        return 'New';
+const activeAnalysisTab = ref<AnalysisTab>('pages');
+const activePageTab = ref<PageTab>('popular');
+const analysisTabs: Array<{ id: AnalysisTab; label: string }> = [
+    { id: 'insights', label: 'Insights' },
+    { id: 'pages', label: 'Pages' },
+    { id: 'acquisition', label: 'Acquisition' },
+    { id: 'audience', label: 'Audience' },
+    { id: 'outcomes', label: 'Outcomes' },
+];
+const pageTabs: Array<{ id: PageTab; label: string }> = [
+    { id: 'popular', label: 'Popular' },
+    { id: 'entry', label: 'Entry' },
+    { id: 'exit', label: 'Exit' },
+];
+const activePageItems = computed(() => {
+    if (activePageTab.value === 'entry') {
+        return props.analytics.entryPages;
     }
 
-    return (change >= 0 ? '+' : '') + change + '%';
+    if (activePageTab.value === 'exit') {
+        return props.analytics.exitPages;
+    }
+
+    return props.analytics.topPages;
+});
+const activePageTotal = computed(() =>
+    activePageTab.value === 'popular'
+        ? props.analytics.metrics.pageviews
+        : totalOf(activePageItems.value),
+);
+const activePageDescription = computed(() => {
+    if (activePageTab.value === 'entry') {
+        return 'Where visits begin';
+    }
+
+    if (activePageTab.value === 'exit') {
+        return 'Where visits end';
+    }
+
+    return 'Pages with the most views';
+});
+
+function activateAdjacentTab(event: KeyboardEvent, offset: number): void {
+    const currentButton = event.currentTarget as HTMLButtonElement;
+    const tabList = currentButton.parentElement;
+    const buttons = Array.from(
+        tabList?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+    );
+    const currentIndex = buttons.indexOf(currentButton);
+
+    if (currentIndex < 0 || buttons.length === 0) {
+        return;
+    }
+
+    const nextIndex = (currentIndex + offset + buttons.length) % buttons.length;
+    buttons[nextIndex]?.focus();
+    buttons[nextIndex]?.click();
+}
+
+function formatNumber(value: number): string {
+    return new Intl.NumberFormat().format(value);
 }
 
 function formatPercentage(value: number): string {
@@ -535,7 +646,7 @@ onBeforeUnmount(() => {
         <Head title="Dashboard" />
 
         <div
-            class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pt-6 pb-20 sm:px-6 sm:pt-8"
+            class="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pt-6 pb-24 sm:gap-6 sm:px-6 sm:pt-8"
         >
             <header
                 class="flex flex-col justify-between gap-5 sm:flex-row sm:items-center"
@@ -569,26 +680,6 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                    <Button
-                        as-child
-                        variant="ghost"
-                        size="sm"
-                        class="hidden sm:inline-flex"
-                    >
-                        <Link :href="aiTrafficRoute(project.id).url"
-                            >AI traffic</Link
-                        >
-                    </Button>
-                    <Button
-                        as-child
-                        variant="ghost"
-                        size="sm"
-                        class="hidden sm:inline-flex"
-                    >
-                        <Link :href="aiVisibilityShow(project.id).url"
-                            >AI visibility</Link
-                        >
-                    </Button>
                     <span
                         class="inline-flex h-9 items-center gap-2 rounded-full bg-secondary px-3 text-xs text-muted-foreground"
                     >
@@ -597,10 +688,9 @@ onBeforeUnmount(() => {
                         </span>
                         <strong
                             class="font-medium text-foreground tabular-nums"
-                            >{{
-                                formatNumber(analytics.metrics.activeVisitors)
-                            }}</strong
                         >
+                            {{ formatNumber(analytics.metrics.activeVisitors) }}
+                        </strong>
                         active now
                     </span>
                     <select
@@ -634,498 +724,602 @@ onBeforeUnmount(() => {
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom">
-                            Refresh now. Data also updates quietly every 30
-                            seconds.
+                            Refresh now. Data also updates every 30 seconds.
                         </TooltipContent>
                     </Tooltip>
-                    <Tooltip>
-                        <TooltipTrigger as-child>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger :as-child="true">
                             <Button
-                                as-child
                                 variant="outline"
                                 size="icon"
-                                aria-label="Website settings"
+                                aria-label="More dashboard options"
                             >
-                                <Link :href="editWebsiteSettings(project.id)">
-                                    <Settings
-                                        class="size-4"
-                                        aria-hidden="true"
-                                    />
-                                </Link>
+                                <MoreHorizontal class="size-4" />
                             </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                            Website settings
-                        </TooltipContent>
-                    </Tooltip>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" class="w-44">
+                            <DropdownMenuItem :as-child="true">
+                                <Link :href="aiTrafficRoute(project.id).url">
+                                    <Waypoints class="size-4" />
+                                    AI traffic
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem :as-child="true">
+                                <Link :href="aiVisibilityShow(project.id).url">
+                                    <ScanEye class="size-4" />
+                                    AI visibility
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem :as-child="true">
+                                <Link :href="editWebsiteSettings(project.id)">
+                                    <Settings class="size-4" />
+                                    Website settings
+                                </Link>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </header>
 
-            <section
-                class="flex flex-col gap-3"
-                aria-labelledby="metrics-title"
+            <Card
+                class="gap-0 overflow-hidden p-1"
+                aria-labelledby="focus-title"
             >
-                <div>
-                    <h2 id="metrics-title" class="text-sm font-medium">
-                        At a glance
-                    </h2>
-                    <p class="mt-1 text-xs text-muted-foreground">
-                        Each metric is compared with the previous matching
-                        period.
-                    </p>
-                </div>
-                <div class="grid grid-cols-2 gap-3 lg:grid-cols-3">
-                    <MetricTrendCard
-                        v-for="metric in metricCards"
-                        :key="metric.label"
-                        :animation-key="`${analytics.range.key}-${metric.label}`"
-                        :label="metric.label"
-                        :value="metric.value"
-                        :detail="metric.detail"
-                        :icon="metric.icon"
-                        :current-value="metric.currentValue"
-                        :previous-value="metric.previousValue"
-                        :previous-value-label="metric.previousValueLabel"
-                        :change="metric.change"
-                        :series="metric.series"
-                        :comparison-label="metric.comparisonLabel"
-                        :inverse="metric.inverse"
-                        :is-live="metric.isLive"
-                    />
-                </div>
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <Card class="flex items-center justify-between gap-4 p-4">
-                        <div class="flex items-center gap-3">
-                            <span
-                                class="flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground"
-                                ><BadgePercent class="size-4"
-                            /></span>
-                            <div>
-                                <p class="text-sm font-medium">Conversions</p>
-                                <p class="text-xs text-muted-foreground">
-                                    Completed goals this period
-                                </p>
-                            </div>
-                        </div>
-                        <span class="font-mono text-lg tabular-nums">{{
-                            formatNumber(analytics.metrics.conversions)
-                        }}</span>
-                    </Card>
-                    <Card class="flex items-center justify-between gap-4 p-4">
-                        <div class="flex items-center gap-3">
-                            <span
-                                class="flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground"
-                                ><MousePointerClick class="size-4"
-                            /></span>
-                            <div>
-                                <p class="text-sm font-medium">
-                                    Conversion rate
-                                </p>
-                                <p class="text-xs text-muted-foreground">
-                                    Visits that completed a goal
-                                </p>
-                            </div>
-                        </div>
-                        <span class="font-mono text-lg tabular-nums">{{
-                            formatPercentage(analytics.metrics.conversionRate)
-                        }}</span>
-                    </Card>
-                </div>
-            </section>
-
-            <section
-                v-if="actionableInsights.length"
-                aria-labelledby="what-changed-title"
-                class="space-y-3"
-            >
-                <div>
-                    <h2 id="what-changed-title" class="text-sm font-medium">
-                        What changed?
-                    </h2>
-                    <p class="mt-1 text-xs text-muted-foreground">
-                        Meaningful movement compared with the previous
-                        equivalent period.
-                    </p>
-                </div>
-                <div class="grid gap-3 md:grid-cols-2">
-                    <Card
-                        v-for="insight in actionableInsights"
-                        :key="insight.fingerprint"
-                        class="p-4"
-                    >
-                        <div class="flex items-start gap-3">
-                            <span
-                                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-warning"
-                                ><Lightbulb class="size-4"
-                            /></span>
-                            <div class="min-w-0">
-                                <p class="text-sm font-medium">
-                                    {{ insight.summary }}
-                                </p>
-                                <p
-                                    class="mt-1 text-xs leading-5 text-muted-foreground"
+                <div class="rounded-xl bg-card px-4 py-4 sm:px-5">
+                    <div class="flex items-start gap-3">
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary"
+                            :class="{
+                                'text-destructive':
+                                    primaryActionableInsight?.severity ===
+                                    'critical',
+                                'text-warning':
+                                    primaryActionableInsight?.severity ===
+                                    'warning',
+                                'text-primary':
+                                    primaryActionableInsight?.severity ===
+                                    'info',
+                                'text-success':
+                                    !primaryActionableInsight &&
+                                    focusStatus?.tone === 'positive',
+                                'text-muted-foreground':
+                                    !primaryActionableInsight &&
+                                    focusStatus?.tone === 'neutral',
+                            }"
+                            aria-hidden="true"
+                        >
+                            <Lightbulb
+                                v-if="primaryActionableInsight"
+                                class="size-4"
+                            />
+                            <component
+                                :is="focusStatus.icon"
+                                v-else-if="focusStatus"
+                                class="size-4"
+                            />
+                            <CircleGauge v-else class="size-4" />
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <p
+                                class="text-[11px] font-medium tracking-[0.1em] text-muted-foreground uppercase"
+                            >
+                                Focus
+                            </p>
+                            <template v-if="primaryActionableInsight">
+                                <h2
+                                    id="focus-title"
+                                    class="mt-1 text-base font-medium tracking-[-0.02em]"
                                 >
-                                    {{ insight.explanation }}
-                                </p>
+                                    {{ primaryActionableInsight.summary }}
+                                </h2>
                                 <p
-                                    class="mt-2 text-xs font-medium text-foreground"
+                                    class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground"
                                 >
-                                    Next: {{ insight.recommendation }}
+                                    {{ primaryActionableInsight.explanation }}
+                                </p>
+                                <p class="mt-2 text-sm">
+                                    <span class="text-muted-foreground"
+                                        >Next:</span
+                                    >
+                                    {{
+                                        primaryActionableInsight.recommendation
+                                    }}
                                 </p>
                                 <div
-                                    v-if="insight.actions?.length"
-                                    class="mt-3 flex flex-wrap gap-2"
+                                    class="mt-3 flex flex-wrap items-center gap-2"
                                 >
                                     <Button
-                                        v-for="action in insight.actions"
+                                        v-for="action in primaryActionableInsight.actions"
                                         :key="action.key"
                                         type="button"
                                         size="sm"
                                         variant="outline"
-                                        class="h-7 px-2 text-[11px]"
+                                        class="h-8 rounded-full px-3 text-xs"
                                         :disabled="
                                             activeInsightAction ===
-                                            insight.id + ':' + action.key
+                                            primaryActionableInsight.id +
+                                                ':' +
+                                                action.key
                                         "
                                         :title="action.description"
                                         @click="
-                                            runInsightAction(insight, action)
+                                            runInsightAction(
+                                                primaryActionableInsight,
+                                                action,
+                                            )
                                         "
                                     >
                                         {{
                                             activeInsightAction ===
-                                            insight.id + ':' + action.key
+                                            primaryActionableInsight.id +
+                                                ':' +
+                                                action.key
                                                 ? 'Working…'
                                                 : action.label
                                         }}
                                     </Button>
+                                    <Button
+                                        v-if="actionableInsights.length > 1"
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        class="h-8 rounded-full px-3 text-xs"
+                                        @click="activeAnalysisTab = 'insights'"
+                                    >
+                                        View all changes
+                                    </Button>
                                 </div>
-                            </div>
+                            </template>
+                            <template v-else-if="focusStatus">
+                                <h2
+                                    id="focus-title"
+                                    class="mt-1 text-base font-medium tracking-[-0.02em]"
+                                >
+                                    {{ focusStatus.title }}
+                                </h2>
+                                <p
+                                    class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground"
+                                >
+                                    {{ focusStatus.description }}
+                                </p>
+                            </template>
+                            <template v-else>
+                                <h2 id="focus-title" class="mt-1 font-medium">
+                                    Collecting analytics
+                                </h2>
+                                <p class="mt-1 text-sm text-muted-foreground">
+                                    Peekchimp will highlight meaningful changes
+                                    after more visits arrive.
+                                </p>
+                            </template>
                         </div>
-                    </Card>
+                    </div>
                 </div>
-            </section>
+            </Card>
 
-            <DashboardTrafficChart
+            <DashboardOverview
+                :primary-metrics="primaryMetrics"
+                :secondary-metrics="secondaryMetrics"
                 :range="analytics.range"
-                :metrics="analytics.metrics"
+                :chart-metrics="analytics.metrics"
                 :timeseries="analytics.timeseries"
             />
 
-            <div class="grid gap-3 lg:grid-cols-12">
-                <Card
-                    class="order-2 gap-0 overflow-hidden p-1 lg:order-1 lg:col-span-7"
-                >
+            <Card class="gap-0 overflow-hidden p-1">
+                <div class="rounded-xl bg-background/70">
                     <div
-                        class="flex h-full flex-col rounded-xl bg-background/70 p-4 sm:p-5"
+                        class="flex flex-col gap-4 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
                     >
-                        <div class="flex items-start justify-between gap-4">
-                            <div class="flex items-start gap-3">
-                                <span
-                                    class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground"
-                                    aria-hidden="true"
+                        <div>
+                            <h2 class="font-medium">Explore</h2>
+                            <p class="mt-1 text-xs text-muted-foreground">
+                                Open one area at a time when you need more
+                                detail.
+                            </p>
+                        </div>
+                        <div
+                            class="max-w-full overflow-x-auto pb-1"
+                            role="tablist"
+                            aria-label="Dashboard analysis"
+                        >
+                            <div
+                                class="inline-flex min-w-max items-center gap-1 rounded-full border border-border bg-card p-1"
+                            >
+                                <button
+                                    v-for="tab in analysisTabs"
+                                    :id="'analysis-' + tab.id + '-tab'"
+                                    :key="tab.id"
+                                    type="button"
+                                    role="tab"
+                                    class="h-8 cursor-pointer rounded-full px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                    :class="
+                                        activeAnalysisTab === tab.id
+                                            ? 'bg-secondary text-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                    "
+                                    :aria-selected="
+                                        activeAnalysisTab === tab.id
+                                    "
+                                    :aria-controls="
+                                        'analysis-' + tab.id + '-panel'
+                                    "
+                                    :tabindex="
+                                        activeAnalysisTab === tab.id ? 0 : -1
+                                    "
+                                    @click="activeAnalysisTab = tab.id"
+                                    @keydown.left.prevent="
+                                        activateAdjacentTab($event, -1)
+                                    "
+                                    @keydown.right.prevent="
+                                        activateAdjacentTab($event, 1)
+                                    "
                                 >
-                                    <FileText class="size-4" />
-                                </span>
+                                    {{ tab.label }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <Transition name="analysis-panel" mode="out-in">
+                        <section
+                            v-if="activeAnalysisTab === 'insights'"
+                            id="analysis-insights-panel"
+                            key="insights"
+                            class="analysis-panel px-4 py-5 sm:px-5"
+                            role="tabpanel"
+                            aria-labelledby="analysis-insights-tab"
+                        >
+                            <div class="grid gap-3 lg:grid-cols-2">
+                                <div
+                                    v-for="insight in actionableInsights"
+                                    :key="insight.fingerprint"
+                                    class="rounded-xl border border-border/80 bg-card/55 p-4"
+                                >
+                                    <div class="flex items-start gap-3">
+                                        <Lightbulb
+                                            class="mt-0.5 size-4 shrink-0 text-warning"
+                                            aria-hidden="true"
+                                        />
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium">
+                                                {{ insight.summary }}
+                                            </p>
+                                            <p
+                                                class="mt-1 text-xs leading-5 text-muted-foreground"
+                                            >
+                                                {{ insight.explanation }}
+                                            </p>
+                                            <p class="mt-2 text-xs">
+                                                {{ insight.recommendation }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    v-for="insight in insightCards"
+                                    :key="insight.type"
+                                    class="rounded-xl border border-border/80 bg-card/55 p-4"
+                                >
+                                    <div class="flex items-start gap-3">
+                                        <component
+                                            :is="insight.icon"
+                                            class="mt-0.5 size-4 shrink-0"
+                                            :class="{
+                                                'text-warning':
+                                                    insight.tone ===
+                                                    'attention',
+                                                'text-success':
+                                                    insight.tone === 'positive',
+                                                'text-muted-foreground':
+                                                    insight.tone === 'neutral',
+                                            }"
+                                            aria-hidden="true"
+                                        />
+                                        <div>
+                                            <p class="text-sm font-medium">
+                                                {{ insight.title }}
+                                            </p>
+                                            <p
+                                                class="mt-1 text-xs leading-5 text-muted-foreground"
+                                            >
+                                                {{ insight.description }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p
+                                v-if="
+                                    actionableInsights.length === 0 &&
+                                    insightCards.length === 0
+                                "
+                                class="py-12 text-center text-sm text-muted-foreground"
+                                role="status"
+                            >
+                                No insights are available for this period.
+                            </p>
+                        </section>
+
+                        <section
+                            v-else-if="activeAnalysisTab === 'pages'"
+                            id="analysis-pages-panel"
+                            key="pages"
+                            class="analysis-panel px-4 py-5 sm:px-5"
+                            role="tabpanel"
+                            aria-labelledby="analysis-pages-tab"
+                        >
+                            <div
+                                class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
                                 <div>
-                                    <h2 class="font-medium">
-                                        Most visited pages
-                                    </h2>
+                                    <h3 class="text-sm font-medium">
+                                        Website pages
+                                    </h3>
                                     <p
                                         class="mt-1 text-xs text-muted-foreground"
                                     >
-                                        Pages with the most views
+                                        {{ activePageDescription }}
                                     </p>
                                 </div>
-                            </div>
-                            <span
-                                class="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
-                            >
-                                {{ formatNumber(analytics.metrics.pageviews) }}
-                                views
-                            </span>
-                        </div>
-                        <div class="mt-4 flex h-56 flex-col gap-1">
-                            <div
-                                v-for="(
-                                    page, index
-                                ) in analytics.topPages.slice(0, 5)"
-                                :key="page.label"
-                                class="group/page relative flex min-h-10 items-center gap-3 overflow-hidden rounded-md px-3 py-2 text-sm transition-colors duration-100 hover:bg-accent/70"
-                            >
-                                <span
-                                    class="absolute inset-y-0 left-0 bg-foreground/[0.035] transition-[width] duration-200 ease-out motion-reduce:transition-none"
-                                    :style="{
-                                        width: `${percentageOf(page.value, analytics.metrics.pageviews)}%`,
-                                    }"
-                                    aria-hidden="true"
-                                />
-                                <FileText
-                                    class="relative size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/page:translate-x-0.5 motion-reduce:transform-none"
-                                    aria-hidden="true"
-                                />
-                                <span
-                                    class="relative w-5 shrink-0 font-mono text-[10px] text-muted-foreground"
+                                <div
+                                    class="inline-flex w-fit items-center gap-1 rounded-full bg-secondary p-1"
+                                    role="tablist"
+                                    aria-label="Page views"
                                 >
-                                    {{ String(index + 1).padStart(2, '0') }}
-                                </span>
-                                <span
-                                    class="relative min-w-0 flex-1 truncate font-mono text-xs"
-                                >
-                                    {{ page.label }}
-                                </span>
-                                <span
-                                    class="relative shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
-                                >
-                                    {{ formatNumber(page.value) }}
-                                </span>
+                                    <button
+                                        v-for="tab in pageTabs"
+                                        :id="'pages-' + tab.id + '-tab'"
+                                        :key="tab.id"
+                                        type="button"
+                                        role="tab"
+                                        class="h-7 rounded-full px-3 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                        :class="
+                                            activePageTab === tab.id
+                                                ? 'bg-card text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]'
+                                                : 'text-muted-foreground hover:text-foreground'
+                                        "
+                                        :aria-selected="
+                                            activePageTab === tab.id
+                                        "
+                                        @click="activePageTab = tab.id"
+                                    >
+                                        {{ tab.label }}
+                                    </button>
+                                </div>
                             </div>
                             <div
-                                v-if="analytics.topPages.length === 0"
-                                class="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
-                                role="status"
+                                class="min-h-56 overflow-hidden rounded-xl border border-border/80 bg-card/55 py-2"
                             >
-                                <FileText class="size-5" aria-hidden="true" />
-                                No page views in this period.
-                            </div>
-                        </div>
-                    </div>
-                </Card>
-
-                <Card
-                    class="order-1 gap-0 overflow-hidden p-1 lg:order-2 lg:col-span-5"
-                >
-                    <div
-                        class="flex h-full flex-col rounded-xl bg-background/70 p-4 sm:p-5"
-                    >
-                        <div class="flex items-start gap-3">
-                            <span
-                                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground"
-                                aria-hidden="true"
-                            >
-                                <Lightbulb class="size-4" />
-                            </span>
-                            <div>
-                                <h2 class="font-medium">What stands out</h2>
-                                <p class="mt-1 text-xs text-muted-foreground">
-                                    Patterns worth a closer look
+                                <div
+                                    v-for="(
+                                        page, index
+                                    ) in activePageItems.slice(0, 8)"
+                                    :key="page.label"
+                                    class="group/page relative flex min-h-10 items-center gap-3 overflow-hidden px-3 py-2 text-sm transition-colors hover:bg-accent/70"
+                                >
+                                    <span
+                                        class="absolute inset-y-0 left-0 bg-foreground/[0.035]"
+                                        :style="{
+                                            width:
+                                                percentageOf(
+                                                    page.value,
+                                                    activePageTotal,
+                                                ) + '%',
+                                        }"
+                                        aria-hidden="true"
+                                    />
+                                    <span
+                                        class="relative w-5 shrink-0 font-mono text-[10px] text-muted-foreground"
+                                    >
+                                        {{ String(index + 1).padStart(2, '0') }}
+                                    </span>
+                                    <FileText
+                                        class="relative size-4 shrink-0 text-muted-foreground"
+                                        aria-hidden="true"
+                                    />
+                                    <span
+                                        class="relative min-w-0 flex-1 truncate font-mono text-xs"
+                                    >
+                                        {{ page.label }}
+                                    </span>
+                                    <span
+                                        class="relative shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
+                                    >
+                                        {{ formatNumber(page.value) }}
+                                    </span>
+                                </div>
+                                <p
+                                    v-if="activePageItems.length === 0"
+                                    class="py-20 text-center text-sm text-muted-foreground"
+                                    role="status"
+                                >
+                                    No page activity in this period.
                                 </p>
                             </div>
-                        </div>
+                        </section>
 
-                        <div class="mt-4 flex h-56 flex-col gap-2">
-                            <div
-                                v-for="insight in insightCards"
-                                :key="insight.type"
-                                class="flex flex-1 items-start gap-3 rounded-xl border border-border/80 bg-card/55 p-3.5"
-                            >
-                                <span
-                                    class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background"
-                                    :class="{
-                                        'text-warning':
-                                            insight.tone === 'attention',
-                                        'text-success':
-                                            insight.tone === 'positive',
-                                        'text-muted-foreground':
-                                            insight.tone === 'neutral',
-                                    }"
-                                    aria-hidden="true"
-                                >
-                                    <component
-                                        :is="insight.icon"
-                                        class="size-3.5"
-                                    />
-                                </span>
-                                <div class="min-w-0">
-                                    <p class="text-sm font-medium">
-                                        {{ insight.title }}
-                                    </p>
-                                    <p
-                                        class="mt-1 text-xs leading-5 text-muted-foreground"
+                        <section
+                            v-else-if="activeAnalysisTab === 'acquisition'"
+                            id="analysis-acquisition-panel"
+                            key="acquisition"
+                            class="analysis-panel"
+                            role="tabpanel"
+                            aria-labelledby="analysis-acquisition-tab"
+                        >
+                            <DashboardBreakdownCard
+                                embedded
+                                id="acquisition"
+                                title="Acquisition"
+                                description="How people reached your website"
+                                :icon="Waypoints"
+                                :tabs="acquisitionTabs"
+                            />
+                        </section>
+
+                        <section
+                            v-else-if="activeAnalysisTab === 'audience'"
+                            id="analysis-audience-panel"
+                            key="audience"
+                            class="analysis-panel"
+                            role="tabpanel"
+                            aria-labelledby="analysis-audience-tab"
+                        >
+                            <DashboardBreakdownCard
+                                embedded
+                                id="audience"
+                                title="Audience"
+                                description="Anonymous details about your visitors"
+                                :icon="UsersRound"
+                                :tabs="audienceTabs"
+                            />
+                        </section>
+
+                        <section
+                            v-else
+                            id="analysis-outcomes-panel"
+                            key="outcomes"
+                            class="analysis-panel px-4 py-5 sm:px-5"
+                            role="tabpanel"
+                            aria-labelledby="analysis-outcomes-tab"
+                        >
+                            <div class="grid gap-5 lg:grid-cols-2">
+                                <div>
+                                    <div
+                                        class="flex items-start justify-between gap-4"
                                     >
-                                        {{ insight.description }}
-                                    </p>
+                                        <div>
+                                            <h3 class="text-sm font-medium">
+                                                Important actions
+                                            </h3>
+                                            <p
+                                                class="mt-1 text-xs text-muted-foreground"
+                                            >
+                                                Clicks against matching page
+                                                views.
+                                            </p>
+                                        </div>
+                                        <Link
+                                            :href="actionsIndex(project.id).url"
+                                            class="text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
+                                        >
+                                            Manage
+                                        </Link>
+                                    </div>
+                                    <div
+                                        class="mt-4 overflow-hidden rounded-xl border border-border/80 bg-card/55 py-2"
+                                    >
+                                        <div
+                                            v-for="action in analytics.importantActions"
+                                            :key="action.id"
+                                            class="flex items-center justify-between gap-4 px-3 py-2 text-sm"
+                                        >
+                                            <span class="min-w-0 truncate">
+                                                {{ action.name }}
+                                            </span>
+                                            <span
+                                                class="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums"
+                                            >
+                                                {{
+                                                    formatNumber(action.clicks)
+                                                }}
+                                                clicks ·
+                                                {{
+                                                    formatPercentage(action.ctr)
+                                                }}
+                                            </span>
+                                        </div>
+                                        <p
+                                            v-if="
+                                                analytics.importantActions
+                                                    .length === 0
+                                            "
+                                            class="px-4 py-12 text-center text-sm text-muted-foreground"
+                                        >
+                                            No important actions configured.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        class="flex items-start justify-between gap-4"
+                                    >
+                                        <div>
+                                            <h3 class="text-sm font-medium">
+                                                Goals
+                                            </h3>
+                                            <p
+                                                class="mt-1 text-xs text-muted-foreground"
+                                            >
+                                                Session outcomes worth
+                                                measuring.
+                                            </p>
+                                        </div>
+                                        <div
+                                            class="flex gap-3 text-xs text-muted-foreground"
+                                        >
+                                            <Link
+                                                :href="
+                                                    goalsIndex(project.id).url
+                                                "
+                                                class="underline decoration-border underline-offset-4 hover:text-foreground"
+                                            >
+                                                Manage
+                                            </Link>
+                                            <Link
+                                                :href="
+                                                    funnelsIndex(project.id).url
+                                                "
+                                                class="underline decoration-border underline-offset-4 hover:text-foreground"
+                                            >
+                                                Funnels
+                                            </Link>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="mt-4 overflow-hidden rounded-xl border border-border/80 bg-card/55 py-2"
+                                    >
+                                        <div
+                                            v-for="goal in analytics.goals"
+                                            :key="goal.id"
+                                            class="flex items-center justify-between gap-4 px-3 py-2 text-sm"
+                                        >
+                                            <span class="min-w-0 truncate">
+                                                {{ goal.name }}
+                                            </span>
+                                            <span
+                                                class="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums"
+                                            >
+                                                {{
+                                                    formatNumber(
+                                                        goal.conversions,
+                                                    )
+                                                }}
+                                                ·
+                                                {{
+                                                    formatPercentage(
+                                                        goal.conversionRate,
+                                                    )
+                                                }}
+                                            </span>
+                                        </div>
+                                        <p
+                                            v-if="analytics.goals.length === 0"
+                                            class="px-4 py-12 text-center text-sm text-muted-foreground"
+                                        >
+                                            No goals configured.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </Card>
-            </div>
-
-            <section
-                v-if="analytics.entryPages.length || analytics.exitPages.length"
-                class="grid gap-3 lg:grid-cols-2"
-                aria-label="Entry and exit pages"
-            >
-                <Card class="p-5">
-                    <div class="flex items-center justify-between gap-3">
-                        <div>
-                            <h2 class="font-medium">Entry pages</h2>
-                            <p class="mt-1 text-xs text-muted-foreground">
-                                Where visits begin
-                            </p>
-                        </div>
-                    </div>
-                    <div class="mt-4 space-y-2">
-                        <div
-                            v-for="page in analytics.entryPages.slice(0, 5)"
-                            :key="page.label"
-                            class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent/70"
-                        >
-                            <span class="truncate font-mono text-xs">{{
-                                page.label
-                            }}</span>
-                            <span
-                                class="font-mono text-xs text-muted-foreground tabular-nums"
-                                >{{ formatNumber(page.value) }}</span
-                            >
-                        </div>
-                        <p
-                            v-if="!analytics.entryPages.length"
-                            class="text-sm text-muted-foreground"
-                        >
-                            No entry pages in this period.
-                        </p>
-                    </div>
-                </Card>
-                <Card class="p-5">
-                    <div>
-                        <h2 class="font-medium">Exit pages</h2>
-                        <p class="mt-1 text-xs text-muted-foreground">
-                            Where visits end
-                        </p>
-                    </div>
-                    <div class="mt-4 space-y-2">
-                        <div
-                            v-for="page in analytics.exitPages.slice(0, 5)"
-                            :key="page.label"
-                            class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent/70"
-                        >
-                            <span class="truncate font-mono text-xs">{{
-                                page.label
-                            }}</span>
-                            <span
-                                class="font-mono text-xs text-muted-foreground tabular-nums"
-                                >{{ formatNumber(page.value) }}</span
-                            >
-                        </div>
-                        <p
-                            v-if="!analytics.exitPages.length"
-                            class="text-sm text-muted-foreground"
-                        >
-                            No exit pages in this period.
-                        </p>
-                    </div>
-                </Card>
-            </section>
-
-            <section
-                class="grid gap-3 lg:grid-cols-2"
-                aria-label="Traffic and audience details"
-            >
-                <DashboardBreakdownCard
-                    id="acquisition"
-                    title="Acquisition"
-                    description="How people reached your website"
-                    :icon="Waypoints"
-                    :tabs="acquisitionTabs"
-                />
-                <DashboardBreakdownCard
-                    id="audience"
-                    title="Audience"
-                    description="Anonymous details about your visitors"
-                    :icon="UsersRound"
-                    :tabs="audienceTabs"
-                />
-            </section>
-
-            <section
-                v-if="
-                    analytics.importantActions.length || analytics.goals.length
-                "
-                class="grid gap-3 lg:grid-cols-2"
-                aria-label="Outcomes"
-            >
-                <Card v-if="analytics.importantActions.length" class="p-5"
-                    ><div class="flex items-center justify-between">
-                        <div>
-                            <h2 class="font-medium">Important actions</h2>
-                            <p class="mt-1 text-xs text-muted-foreground">
-                                Clicks against views on the matching page.
-                            </p>
-                        </div>
-                        <Link
-                            :href="actionsIndex(project.id).url"
-                            class="text-xs text-muted-foreground underline"
-                            >Manage</Link
-                        >
-                    </div>
-                    <div class="mt-4 space-y-3">
-                        <div
-                            v-for="action in analytics.importantActions"
-                            :key="action.id"
-                            class="flex items-center justify-between text-sm"
-                        >
-                            <span>{{ action.name }}</span
-                            ><span
-                                class="font-mono text-xs text-muted-foreground"
-                                >{{ formatNumber(action.views) }} views ·
-                                {{ formatNumber(action.clicks) }} clicks ·
-                                {{ formatPercentage(action.ctr) }}</span
-                            >
-                        </div>
-                    </div></Card
-                >
-                <Card v-if="analytics.goals.length" class="p-5"
-                    ><div class="flex items-center justify-between">
-                        <div>
-                            <h2 class="font-medium">Goals</h2>
-                            <p class="mt-1 text-xs text-muted-foreground">
-                                Session-based outcomes worth measuring.
-                            </p>
-                        </div>
-                        <div class="flex gap-3 text-xs text-muted-foreground">
-                            <Link
-                                :href="goalsIndex(project.id).url"
-                                class="underline"
-                                >Manage</Link
-                            ><Link
-                                :href="funnelsIndex(project.id).url"
-                                class="underline"
-                                >Funnels</Link
-                            >
-                        </div>
-                    </div>
-                    <div class="mt-4 space-y-3">
-                        <div
-                            v-for="goal in analytics.goals"
-                            :key="goal.id"
-                            class="flex items-center justify-between text-sm"
-                        >
-                            <span>{{ goal.name }}</span
-                            ><span
-                                class="font-mono text-xs text-muted-foreground"
-                                >{{ formatNumber(goal.conversions) }} ·
-                                {{
-                                    formatPercentage(goal.conversionRate)
-                                }}</span
-                            >
-                            <span class="text-[11px] text-muted-foreground">
-                                {{ trendLabel(goal.trend.change) }} vs prior
-                            </span>
-                        </div>
-                    </div></Card
-                >
-            </section>
+                        </section>
+                    </Transition>
+                </div>
+            </Card>
         </div>
     </TooltipProvider>
 </template>
 
 <style scoped>
-.data-arrive {
-    animation: data-arrive 160ms ease-out both;
-}
-
 .tracking-status {
     position: relative;
     display: inline-flex;
@@ -1146,18 +1340,28 @@ onBeforeUnmount(() => {
     animation: tracking-pulse 1.6s ease-in-out infinite;
 }
 
-@keyframes data-arrive {
-    from {
-        opacity: 0.45;
-        filter: blur(4px);
-        transform: translateY(2px);
-    }
+.analysis-panel-enter-active {
+    transition:
+        opacity 160ms ease-out,
+        transform 160ms cubic-bezier(0.2, 0, 0, 1),
+        filter 160ms ease-out;
+}
 
-    to {
-        opacity: 1;
-        filter: blur(0);
-        transform: translateY(0);
-    }
+.analysis-panel-leave-active {
+    transition:
+        opacity 100ms ease-in,
+        transform 100ms ease-in;
+}
+
+.analysis-panel-enter-from {
+    opacity: 0;
+    filter: blur(3px);
+    transform: translateY(2px);
+}
+
+.analysis-panel-leave-to {
+    opacity: 0;
+    transform: translateY(-2px);
 }
 
 @keyframes tracking-pulse {
@@ -1178,7 +1382,6 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .data-arrive,
     .tracking-status::before {
         animation: none;
     }

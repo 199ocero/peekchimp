@@ -14,9 +14,9 @@ import {
 } from '@lucide/vue';
 import type { Component } from 'vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import AppearanceMenu from '@/components/AppearanceMenu.vue';
 import DashboardBreakdownCard from '@/components/dashboard/DashboardBreakdownCard.vue';
-import DashboardTrafficChart from '@/components/dashboard/DashboardTrafficChart.vue';
-import MetricTrendCard from '@/components/dashboard/MetricTrendCard.vue';
+import DashboardOverview from '@/components/dashboard/DashboardOverview.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -173,6 +173,45 @@ const metricCards = computed<
     ];
 });
 
+const primaryMetrics = computed(() => {
+    if (metricCards.value.length > 0) {
+        return metricCards.value.slice(0, 2).map((metric) => ({
+            ...metric,
+            id: metric.label.toLowerCase().replaceAll(' ', '-'),
+        }));
+    }
+
+    const traffic = props.analytics.traffic;
+
+    if (!traffic) {
+        return [];
+    }
+
+    return [
+        {
+            id: 'visitors',
+            label: 'Visitors',
+            value: formatNumber(traffic.metrics.visitors),
+            detail: 'Estimated visitors during this period.',
+            currentValue: traffic.metrics.visitors,
+        },
+        {
+            id: 'views',
+            label: 'Views',
+            value: formatNumber(traffic.metrics.pageviews),
+            detail: 'Total page loads, including repeats.',
+            currentValue: traffic.metrics.pageviews,
+        },
+    ];
+});
+
+const secondaryMetrics = computed(() =>
+    metricCards.value.slice(2).map((metric) => ({
+        ...metric,
+        id: metric.label.toLowerCase().replaceAll(' ', '-'),
+    })),
+);
+
 const acquisitionTabs = computed(() => {
     const acquisition = props.analytics.acquisition;
 
@@ -262,6 +301,50 @@ const audienceTabs = computed(() => {
     ];
 });
 
+type PublicAnalysisTab = 'pages' | 'acquisition' | 'audience';
+
+const analysisTabs = computed<Array<{ id: PublicAnalysisTab; label: string }>>(
+    () => [
+        ...(hasSection('pages')
+            ? [{ id: 'pages' as const, label: 'Pages' }]
+            : []),
+        ...(hasSection('acquisition')
+            ? [{ id: 'acquisition' as const, label: 'Acquisition' }]
+            : []),
+        ...(hasSection('audience')
+            ? [{ id: 'audience' as const, label: 'Audience' }]
+            : []),
+    ],
+);
+const activeAnalysisTab = ref<PublicAnalysisTab>('pages');
+
+watch(
+    analysisTabs,
+    (tabs) => {
+        if (!tabs.some((tab) => tab.id === activeAnalysisTab.value)) {
+            activeAnalysisTab.value = tabs[0]?.id ?? 'pages';
+        }
+    },
+    { immediate: true },
+);
+
+function activateAdjacentTab(event: KeyboardEvent, offset: number): void {
+    const currentButton = event.currentTarget as HTMLButtonElement;
+    const tabList = currentButton.parentElement;
+    const buttons = Array.from(
+        tabList?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+    );
+    const currentIndex = buttons.indexOf(currentButton);
+
+    if (currentIndex < 0 || buttons.length === 0) {
+        return;
+    }
+
+    const nextIndex = (currentIndex + offset + buttons.length) % buttons.length;
+    buttons[nextIndex]?.focus();
+    buttons[nextIndex]?.click();
+}
+
 function hasSection(section: PublicSection): boolean {
     return props.visibleSections.includes(section);
 }
@@ -342,7 +425,7 @@ onBeforeUnmount(() => {
 
 <template>
     <TooltipProvider :delay-duration="100">
-        <Head :title="`${project.name} analytics`">
+        <Head :title="project.name + ' analytics'">
             <meta name="robots" content="noindex, nofollow" />
         </Head>
 
@@ -358,13 +441,16 @@ onBeforeUnmount(() => {
                         >
                             <Globe2 class="size-4" />
                         </span>
-                        <span class="truncate text-sm font-medium">{{
-                            project.name
-                        }}</span>
+                        <span class="truncate text-sm font-medium">
+                            {{ project.name }}
+                        </span>
                     </div>
-                    <span class="shrink-0 text-xs text-muted-foreground"
-                        >Shared dashboard</span
-                    >
+                    <div class="flex shrink-0 items-center gap-2">
+                        <span class="text-xs text-muted-foreground">
+                            Shared dashboard
+                        </span>
+                        <AppearanceMenu />
+                    </div>
                 </div>
             </header>
 
@@ -375,17 +461,22 @@ onBeforeUnmount(() => {
                     class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"
                 >
                     <div class="min-w-0">
+                        <p
+                            class="mb-2 text-xs tracking-[0.12em] text-muted-foreground uppercase"
+                        >
+                            Website analytics
+                        </p>
                         <h1
-                            class="truncate text-2xl font-medium tracking-[-0.035em] sm:text-3xl"
+                            class="truncate text-3xl font-medium tracking-[-0.045em]"
                         >
                             {{ project.name }}
                         </h1>
                         <p
-                            class="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground"
+                            class="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground"
                         >
-                            <span class="truncate">{{
-                                project.domain ?? 'Website analytics'
-                            }}</span>
+                            <span class="truncate">
+                                {{ project.domain ?? 'Website analytics' }}
+                            </span>
                             <span aria-hidden="true">·</span>
                             <span class="shrink-0">{{ project.timezone }}</span>
                         </p>
@@ -422,134 +513,195 @@ onBeforeUnmount(() => {
                     </div>
                 </header>
 
-                <section
-                    v-if="hasSection('metrics') && metricCards.length > 0"
-                    class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5"
-                    aria-label="Key metrics"
-                >
-                    <MetricTrendCard
-                        v-for="metric in metricCards"
-                        :key="metric.label"
-                        :animation-key="`${analytics.range.key}-${metric.label}`"
-                        :label="metric.label"
-                        :value="metric.value"
-                        :detail="metric.detail"
-                        :icon="metric.icon"
-                        :current-value="metric.currentValue"
-                        :previous-value="metric.previousValue"
-                        :previous-value-label="metric.previousValueLabel"
-                        :change="metric.change"
-                        :series="metric.series"
-                        :comparison-label="metric.comparisonLabel"
-                        :inverse="metric.inverse"
-                        :is-live="metric.isLive"
-                    />
-                </section>
-
-                <DashboardTrafficChart
-                    v-if="hasSection('traffic') && analytics.traffic"
+                <DashboardOverview
+                    v-if="analytics.metrics || analytics.traffic"
+                    :primary-metrics="primaryMetrics"
+                    :secondary-metrics="secondaryMetrics"
                     :range="analytics.range"
-                    :metrics="analytics.traffic.metrics"
-                    :timeseries="analytics.traffic.timeseries"
+                    :chart-metrics="analytics.traffic?.metrics"
+                    :timeseries="analytics.traffic?.timeseries ?? []"
                 />
 
                 <Card
-                    v-if="hasSection('pages') && analytics.pages"
+                    v-if="analysisTabs.length"
                     class="gap-0 overflow-hidden p-1"
                 >
-                    <div
-                        class="flex h-full flex-col rounded-xl bg-background/70 p-4 sm:p-5"
-                    >
-                        <div class="flex items-start justify-between gap-4">
-                            <div class="flex items-start gap-3">
-                                <span
-                                    class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground"
-                                    aria-hidden="true"
+                    <div class="rounded-xl bg-background/70">
+                        <div
+                            class="flex flex-col gap-4 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+                        >
+                            <div>
+                                <h2 class="font-medium">Explore</h2>
+                                <p class="mt-1 text-xs text-muted-foreground">
+                                    Shared details for this website.
+                                </p>
+                            </div>
+                            <div
+                                v-if="analysisTabs.length > 1"
+                                class="max-w-full overflow-x-auto pb-1"
+                            >
+                                <div
+                                    class="inline-flex min-w-max items-center gap-1 rounded-full border border-border bg-card p-1"
+                                    role="tablist"
+                                    aria-label="Shared dashboard analysis"
                                 >
-                                    <FileText class="size-4" />
-                                </span>
-                                <div>
-                                    <h2 class="font-medium">
-                                        Most visited pages
-                                    </h2>
-                                    <p
-                                        class="mt-1 text-xs text-muted-foreground"
+                                    <button
+                                        v-for="tab in analysisTabs"
+                                        :id="'public-' + tab.id + '-tab'"
+                                        :key="tab.id"
+                                        type="button"
+                                        role="tab"
+                                        class="h-8 rounded-full px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                        :class="
+                                            activeAnalysisTab === tab.id
+                                                ? 'bg-secondary text-foreground'
+                                                : 'text-muted-foreground hover:text-foreground'
+                                        "
+                                        :aria-selected="
+                                            activeAnalysisTab === tab.id
+                                        "
+                                        :aria-controls="
+                                            'public-' + tab.id + '-panel'
+                                        "
+                                        :tabindex="
+                                            activeAnalysisTab === tab.id
+                                                ? 0
+                                                : -1
+                                        "
+                                        @click="activeAnalysisTab = tab.id"
+                                        @keydown.left.prevent="
+                                            activateAdjacentTab($event, -1)
+                                        "
+                                        @keydown.right.prevent="
+                                            activateAdjacentTab($event, 1)
+                                        "
                                     >
-                                        Pages with the most views
-                                    </p>
+                                        {{ tab.label }}
+                                    </button>
                                 </div>
                             </div>
-                            <span
-                                class="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
-                            >
-                                {{ formatNumber(analytics.pages.total) }} views
-                            </span>
                         </div>
-                        <div class="mt-4 flex min-h-40 flex-col gap-1">
-                            <div
-                                v-for="(
-                                    page, index
-                                ) in analytics.pages.items.slice(0, 5)"
-                                :key="page.label"
-                                class="flex min-h-10 items-center gap-3 overflow-hidden rounded-md px-3 py-2 text-sm"
+
+                        <Transition name="public-panel" mode="out-in">
+                            <section
+                                v-if="
+                                    activeAnalysisTab === 'pages' &&
+                                    analytics.pages
+                                "
+                                id="public-pages-panel"
+                                key="pages"
+                                class="px-4 py-5 sm:px-5"
+                                role="tabpanel"
+                                aria-labelledby="public-pages-tab"
                             >
-                                <FileText
-                                    class="size-4 shrink-0 text-muted-foreground"
-                                    aria-hidden="true"
+                                <div
+                                    class="mb-4 flex items-start justify-between gap-4"
+                                >
+                                    <div>
+                                        <h3 class="text-sm font-medium">
+                                            Most visited pages
+                                        </h3>
+                                        <p
+                                            class="mt-1 text-xs text-muted-foreground"
+                                        >
+                                            Pages with the most views
+                                        </p>
+                                    </div>
+                                    <span
+                                        class="font-mono text-xs text-muted-foreground tabular-nums"
+                                    >
+                                        {{
+                                            formatNumber(analytics.pages.total)
+                                        }}
+                                        views
+                                    </span>
+                                </div>
+                                <div
+                                    class="min-h-56 overflow-hidden rounded-xl border border-border/80 bg-card/55 py-2"
+                                >
+                                    <div
+                                        v-for="(
+                                            page, index
+                                        ) in analytics.pages.items.slice(0, 8)"
+                                        :key="page.label"
+                                        class="flex min-h-10 items-center gap-3 px-3 py-2 text-sm"
+                                    >
+                                        <span
+                                            class="w-5 shrink-0 font-mono text-[10px] text-muted-foreground"
+                                        >
+                                            {{
+                                                String(index + 1).padStart(
+                                                    2,
+                                                    '0',
+                                                )
+                                            }}
+                                        </span>
+                                        <FileText
+                                            class="size-4 shrink-0 text-muted-foreground"
+                                            aria-hidden="true"
+                                        />
+                                        <span
+                                            class="min-w-0 flex-1 truncate font-mono text-xs"
+                                        >
+                                            {{ page.label }}
+                                        </span>
+                                        <span
+                                            class="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
+                                        >
+                                            {{ formatNumber(page.value) }}
+                                        </span>
+                                    </div>
+                                    <p
+                                        v-if="
+                                            analytics.pages.items.length === 0
+                                        "
+                                        class="py-20 text-center text-sm text-muted-foreground"
+                                        role="status"
+                                    >
+                                        No page views in this period.
+                                    </p>
+                                </div>
+                            </section>
+
+                            <section
+                                v-else-if="
+                                    activeAnalysisTab === 'acquisition' &&
+                                    acquisitionTabs.length
+                                "
+                                id="public-acquisition-panel"
+                                key="acquisition"
+                                role="tabpanel"
+                                aria-labelledby="public-acquisition-tab"
+                            >
+                                <DashboardBreakdownCard
+                                    embedded
+                                    id="public-acquisition"
+                                    title="Acquisition"
+                                    description="How people reached this website"
+                                    :icon="Waypoints"
+                                    :tabs="acquisitionTabs"
                                 />
-                                <span
-                                    class="w-5 shrink-0 font-mono text-[10px] text-muted-foreground"
-                                >
-                                    {{ String(index + 1).padStart(2, '0') }}
-                                </span>
-                                <span
-                                    class="min-w-0 flex-1 truncate font-mono text-xs"
-                                    >{{ page.label }}</span
-                                >
-                                <span
-                                    class="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
-                                >
-                                    {{ formatNumber(page.value) }}
-                                </span>
-                            </div>
-                            <div
-                                v-if="analytics.pages.items.length === 0"
-                                class="flex flex-1 items-center justify-center text-sm text-muted-foreground"
-                                role="status"
+                            </section>
+
+                            <section
+                                v-else-if="audienceTabs.length"
+                                id="public-audience-panel"
+                                key="audience"
+                                role="tabpanel"
+                                aria-labelledby="public-audience-tab"
                             >
-                                No page views in this period.
-                            </div>
-                        </div>
+                                <DashboardBreakdownCard
+                                    embedded
+                                    id="public-audience"
+                                    title="Audience"
+                                    description="Anonymous details about visitors"
+                                    :icon="UsersRound"
+                                    :tabs="audienceTabs"
+                                />
+                            </section>
+                        </Transition>
                     </div>
                 </Card>
-
-                <section
-                    v-if="
-                        hasSection('acquisition') && acquisitionTabs.length > 0
-                    "
-                    aria-label="Traffic acquisition"
-                >
-                    <DashboardBreakdownCard
-                        id="public-acquisition"
-                        title="Acquisition"
-                        description="How people reached this website"
-                        :icon="Waypoints"
-                        :tabs="acquisitionTabs"
-                    />
-                </section>
-
-                <section
-                    v-if="hasSection('audience') && audienceTabs.length > 0"
-                    aria-label="Audience details"
-                >
-                    <DashboardBreakdownCard
-                        id="public-audience"
-                        title="Audience"
-                        description="Anonymous details about visitors"
-                        :icon="UsersRound"
-                        :tabs="audienceTabs"
-                    />
-                </section>
 
                 <footer class="pt-2 text-center text-xs text-muted-foreground">
                     Shared with Peekchimp · Data updates as the website receives
@@ -559,3 +711,27 @@ onBeforeUnmount(() => {
         </div>
     </TooltipProvider>
 </template>
+
+<style scoped>
+.public-panel-enter-active {
+    transition:
+        opacity 160ms ease-out,
+        transform 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.public-panel-leave-active {
+    transition:
+        opacity 100ms ease-in,
+        transform 100ms ease-in;
+}
+
+.public-panel-enter-from {
+    opacity: 0;
+    transform: translateY(2px);
+}
+
+.public-panel-leave-to {
+    opacity: 0;
+    transform: translateY(-2px);
+}
+</style>

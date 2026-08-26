@@ -28,13 +28,19 @@ type BreakdownTab = {
     total: number;
 };
 
-const props = defineProps<{
-    id: string;
-    title: string;
-    description: string;
-    icon: Component;
-    tabs: BreakdownTab[];
-}>();
+const props = withDefaults(
+    defineProps<{
+        embedded?: boolean;
+        id: string;
+        title: string;
+        description: string;
+        icon: Component;
+        tabs: BreakdownTab[];
+    }>(),
+    {
+        embedded: false,
+    },
+);
 
 const activeTabId = ref(props.tabs[0]?.id ?? '');
 const activeTabIndex = computed(() =>
@@ -117,9 +123,17 @@ function activateAdjacentTab(event: KeyboardEvent, offset: number): void {
 </script>
 
 <template>
-    <Card class="gap-0 overflow-hidden p-1">
+    <component
+        :is="embedded ? 'div' : Card"
+        :class="embedded ? 'min-w-0' : 'gap-0 overflow-hidden p-1'"
+    >
         <div
-            class="flex h-full flex-col rounded-xl bg-background/70 p-4 sm:p-5"
+            :class="[
+                'flex h-full flex-col',
+                embedded
+                    ? 'px-4 py-5 sm:px-5'
+                    : 'rounded-xl bg-background/70 p-4 sm:p-5',
+            ]"
         >
             <div class="flex items-start gap-3">
                 <span
@@ -295,7 +309,7 @@ function activateAdjacentTab(event: KeyboardEvent, offset: number): void {
                 </div>
             </Transition>
         </div>
-    </Card>
+    </component>
 </template>
 
 <style scoped>

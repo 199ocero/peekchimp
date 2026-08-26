@@ -10,18 +10,24 @@ type ChartPoint = SeriesPoint & {
     visitorsY: number;
 };
 
-const props = defineProps<{
-    range: {
-        key: string;
-        label: string;
-        interval: 'hour' | 'day';
-    };
-    metrics: {
-        pageviews: number;
-        visitors: number;
-    };
-    timeseries: SeriesPoint[];
-}>();
+const props = withDefaults(
+    defineProps<{
+        embedded?: boolean;
+        range: {
+            key: string;
+            label: string;
+            interval: 'hour' | 'day';
+        };
+        metrics: {
+            pageviews: number;
+            visitors: number;
+        };
+        timeseries: SeriesPoint[];
+    }>(),
+    {
+        embedded: false,
+    },
+);
 
 const hoveredChartIndex = ref<number | null>(null);
 const dimensions = {
@@ -196,8 +202,15 @@ function formatNumber(value: number): string {
 </script>
 
 <template>
-    <Card class="gap-0 overflow-hidden p-1">
-        <div class="rounded-xl bg-background/70 p-4 sm:p-5">
+    <component
+        :is="embedded ? 'div' : Card"
+        :class="embedded ? 'min-w-0' : 'gap-0 overflow-hidden p-1'"
+    >
+        <div
+            :class="
+                embedded ? 'min-w-0' : 'rounded-xl bg-background/70 p-4 sm:p-5'
+            "
+        >
             <div
                 class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
             >
@@ -460,7 +473,7 @@ function formatNumber(value: number): string {
                 </p>
             </div>
         </div>
-    </Card>
+    </component>
 </template>
 
 <style scoped>

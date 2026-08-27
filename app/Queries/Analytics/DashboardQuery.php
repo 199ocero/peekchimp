@@ -2,10 +2,10 @@
 
 namespace App\Queries\Analytics;
 
-use App\Jobs\GenerateInsightRecommendations;
 use App\Models\AnalyticsEvent;
 use App\Models\AnalyticsSession;
 use App\Models\Project;
+use App\Services\Analytics\AiInsightGenerationCoordinator;
 use App\Services\Analytics\AiReferralClassifier;
 use App\Services\Analytics\AnalyticsRollupReader;
 use App\Services\Analytics\DashboardInsightBuilder;
@@ -23,6 +23,7 @@ class DashboardQuery
 {
     public function __construct(
         private readonly AiReferralClassifier $aiReferralClassifier,
+        private readonly AiInsightGenerationCoordinator $aiInsights,
         private readonly SourceGrouping $sourceGrouping,
         private readonly DashboardInsightBuilder $dashboardInsightBuilder,
         private readonly InsightGenerationService $insightGenerationService,
@@ -36,8 +37,12 @@ class DashboardQuery
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
-    public function run(Project $project, array $filters = [], bool $withInsights = true): array
-    {
+    public function run(
+        Project $project,
+        array $filters = [],
+        bool $withInsights = true,
+        bool $queueAiInsights = true,
+    ): array {
         [$from, $to, $rangeKey, $rangeLabel] = $this->range($project, $filters);
         $normalizedFilters = array_filter([
             'country' => $filters['country'] ?? null,
@@ -53,7 +58,7 @@ class DashboardQuery
             : 'public';
         $cacheKey = 'dashboard:v9:'.$project->getKey().':'.$rangeKey.':'.$from->timestamp.':'.$to->timestamp.':'.sha1((string) json_encode($normalizedFilters)).':'.($withInsights ? 'insights' : 'public').':'.$aiInsightsVersion.':'.$cacheBust;
 
-        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($project, $from, $to, $rangeKey, $rangeLabel, $normalizedFilters, $withInsights): array {
+        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($project, $from, $to, $rangeKey, $rangeLabel, $normalizedFilters, $withInsights, $queueAiInsights): array {
             $activeAt = CarbonImmutable::now('UTC');
             $pageviews = $this->events($project, $from, $to, $normalizedFilters)->where('event_name', 'page_view')->count();
             $visitors = $this->events($project, $from, $to, $normalizedFilters)
@@ -94,8 +99,8 @@ class DashboardQuery
                     $previousFrom,
                     $previousTo,
                 );
-                if ($actionableInsights !== []) {
-                    GenerateInsightRecommendations::dispatch(
+                if ($queueAiInsights && $actionableInsights !== []) {
+                    $this->aiInsights->request(
                         $project,
                         $actionableInsights,
                         $from->toIso8601String(),

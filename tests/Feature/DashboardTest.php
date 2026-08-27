@@ -1,7 +1,11 @@
 <?php
 
 use App\Models\AiInsightRun;
+use App\Models\AnalyticsEvent;
 use App\Models\User;
+use App\Queries\Analytics\DashboardQuery;
+use App\Services\Analytics\AiInsightContextBuilder;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
@@ -22,7 +26,28 @@ test('authenticated users without a verified website are redirected to onboardin
 test('authenticated users with a verified website can visit the dashboard', function () {
     $user = User::factory()->withVerifiedWebsite()->create();
     $project = $user->projects()->sole();
+    AnalyticsEvent::factory()->count(60)->create([
+        'project_id' => $project->getKey(),
+        'event_name' => 'page_view',
+        'occurred_at' => now()->subDay(),
+    ]);
+    AnalyticsEvent::factory()->count(40)->create([
+        'project_id' => $project->getKey(),
+        'event_name' => 'page_view',
+        'occurred_at' => now()->subDays(8),
+    ]);
+    Queue::fake();
+    $analytics = app(DashboardQuery::class)->run($project, ['range' => '7d'], queueAiInsights: false);
+    $candidates = $analytics['actionableInsights'];
+    $contextBuilder = app(AiInsightContextBuilder::class);
+    $context = $contextBuilder->build(
+        $project,
+        $candidates,
+        $candidates[0]['period_start'],
+        $candidates[0]['period_end'],
+    );
     $run = AiInsightRun::factory()->for($project)->create([
+        'context_hash' => $contextBuilder->hash($context),
         'status' => 'failed',
         'error' => 'Provider unavailable.',
     ]);

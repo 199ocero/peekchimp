@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AiInsightRun;
-use App\Models\Project;
 use App\Queries\Analytics\DashboardQuery;
+use App\Services\Analytics\AiInsightGenerationCoordinator;
 use App\Services\Websites\CurrentWebsiteResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,6 +14,7 @@ class DashboardController extends Controller
 {
     public function __construct(
         private readonly DashboardQuery $dashboardQuery,
+        private readonly AiInsightGenerationCoordinator $aiInsights,
         private readonly CurrentWebsiteResolver $websiteResolver,
     ) {}
 
@@ -46,27 +46,11 @@ class DashboardController extends Controller
                 'domains' => $project->domains->pluck('domain')->values(),
             ],
             'analytics' => $analytics,
-            'aiInsightRun' => fn (): ?array => $this->latestAiInsightRun($project),
+            'aiInsightRun' => fn (): ?array => $this->aiInsights->status(
+                $project,
+                $analytics['actionableInsights'] ?? [],
+            ),
             'filters' => $filters,
         ]);
-    }
-
-    /** @return array{status: string, error: string|null, updatedAt: string}|null */
-    private function latestAiInsightRun(Project $project): ?array
-    {
-        $run = AiInsightRun::query()
-            ->where('project_id', $project->getKey())
-            ->latest('updated_at')
-            ->first();
-
-        if ($run === null) {
-            return null;
-        }
-
-        return [
-            'status' => (string) $run->status,
-            'error' => is_string($run->error) ? $run->error : null,
-            'updatedAt' => $run->updated_at->toIso8601String(),
-        ];
     }
 }

@@ -31,7 +31,7 @@ x-peekchimp-runtime: &peekchimp-runtime
   QUEUE_CONNECTION: redis
   REDIS_QUEUE_CONNECTION: default
   REDIS_QUEUE: ${REDIS_QUEUE:-default}
-  REDIS_QUEUE_RETRY_AFTER: ${REDIS_QUEUE_RETRY_AFTER:-120}
+  REDIS_QUEUE_RETRY_AFTER: ${REDIS_QUEUE_RETRY_AFTER:-180}
 
 services:
   app:

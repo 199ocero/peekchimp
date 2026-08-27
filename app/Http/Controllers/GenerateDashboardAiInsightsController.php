@@ -2,10 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateInsightRecommendations;
-use App\Models\AiInsightRun;
 use App\Queries\Analytics\DashboardQuery;
-use App\Services\Analytics\AiInsightContextBuilder;
+use App\Services\Analytics\AiInsightGenerationCoordinator;
 use App\Services\Websites\CurrentWebsiteResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,7 +14,7 @@ class GenerateDashboardAiInsightsController extends Controller
 {
     public function __construct(
         private readonly DashboardQuery $dashboardQuery,
-        private readonly AiInsightContextBuilder $contextBuilder,
+        private readonly AiInsightGenerationCoordinator $aiInsights,
         private readonly CurrentWebsiteResolver $websiteResolver,
     ) {}
 
@@ -37,7 +35,7 @@ class GenerateDashboardAiInsightsController extends Controller
         $filters = $request->only([
             'range', 'from', 'to', 'country', 'device', 'browser', 'referrer', 'page', 'utm_campaign',
         ]);
-        $analytics = $this->dashboardQuery->run($project, $filters);
+        $analytics = $this->dashboardQuery->run($project, $filters, queueAiInsights: false);
         $candidates = $analytics['actionableInsights'] ?? [];
         $periodStart = data_get($candidates, '0.period_start');
         $periodEnd = data_get($candidates, '0.period_end');
@@ -55,14 +53,16 @@ class GenerateDashboardAiInsightsController extends Controller
             return back();
         }
 
-        $context = $this->contextBuilder->build($project, $candidates, $periodStart, $periodEnd);
-        $hasCompletedRun = AiInsightRun::query()
-            ->where('project_id', $project->getKey())
-            ->where('context_hash', $this->contextBuilder->hash($context))
-            ->where('status', 'completed')
-            ->exists();
+        $generation = $this->aiInsights->request(
+            $project,
+            $candidates,
+            $periodStart,
+            $periodEnd,
+            force: true,
+        );
+        $run = $generation['run'];
 
-        if ($hasCompletedRun) {
+        if ($generation['reason'] === 'completed') {
             Inertia::flash('aiInsightGeneration', [
                 'queued' => false,
                 'message' => 'AI insights are already up to date for this data.',
@@ -75,21 +75,33 @@ class GenerateDashboardAiInsightsController extends Controller
             return back();
         }
 
-        GenerateInsightRecommendations::dispatch(
-            $project,
-            $candidates,
-            $periodStart,
-            $periodEnd,
-            true,
-        );
+        if ($generation['reason'] === 'failed') {
+            $message = $run?->error ?: 'Peekchimp could not queue AI generation. Please try again.';
+            Inertia::flash('aiInsightGeneration', [
+                'queued' => false,
+                'runId' => $run?->getKey(),
+                'status' => 'failed',
+                'message' => $message,
+            ]);
+            Inertia::flash('toast', ['type' => 'error', 'message' => $message]);
+
+            return back();
+        }
+
+        $alreadyInProgress = $generation['reason'] === 'in_progress';
+        $message = $alreadyInProgress
+            ? 'AI insight generation is already in progress.'
+            : 'AI insight generation queued.';
 
         Inertia::flash('aiInsightGeneration', [
             'queued' => true,
-            'message' => 'AI insight generation queued.',
+            'runId' => $run?->getKey(),
+            'status' => $run->status,
+            'message' => $message,
         ]);
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => 'AI insight generation queued. The dashboard will update when it is ready.',
+            'message' => $message.' The dashboard will update when it is ready.',
         ]);
 
         return back();

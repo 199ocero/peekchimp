@@ -13,9 +13,28 @@ use App\Services\Analytics\AiProviderRegistry;
 use App\Services\Analytics\InsightGenerationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Facades\Cache;
 
 uses(RefreshDatabase::class);
+
+/** @param array<int, array<string, mixed>> $candidates */
+function createQueuedAiInsightRun(
+    Project $project,
+    array $candidates,
+    string $periodStart,
+    string $periodEnd,
+): AiInsightRun {
+    $contextBuilder = app(AiInsightContextBuilder::class);
+    $context = $contextBuilder->build($project, $candidates, $periodStart, $periodEnd);
+
+    return AiInsightRun::factory()->for($project)->create([
+        'context_hash' => $contextBuilder->hash($context),
+        'status' => 'queued',
+        'started_at' => null,
+        'completed_at' => null,
+    ]);
+}
 
 test('workspace AI settings are restricted to the supported providers and encrypted', function () {
     $user = User::factory()->withVerifiedWebsite()->create(['is_admin' => true]);
@@ -102,11 +121,16 @@ test('recommendation jobs send only bounded context and persist structured outpu
             'confidence_note' => 'This is a comparison, not proof of causation.',
         ]],
     ]])->preventStrayPrompts();
+    $periodStart = '2026-08-01T00:00:00+00:00';
+    $periodEnd = '2026-08-07T23:59:59+00:00';
+    $run = createQueuedAiInsightRun($project, $candidates, $periodStart, $periodEnd);
+
     (new GenerateInsightRecommendations(
+        (int) $run->getKey(),
         $project,
         $candidates,
-        '2026-08-01T00:00:00+00:00',
-        '2026-08-07T23:59:59+00:00',
+        $periodStart,
+        $periodEnd,
     ))->handle(app(AiInsightContextBuilder::class), app(AiProviderRegistry::class));
 
     AnalyticsInsightAgent::assertPrompted(fn ($prompt): bool => ! str_contains($prompt->prompt, 'visitor_id')
@@ -114,7 +138,7 @@ test('recommendation jobs send only bounded context and persist structured outpu
     expect($insight->refresh()->explanation)->toContain('selected period')
         ->and($insight->recommendation)->toContain('source mix')
         ->and($insight->metadata)->toMatchArray(['ai_enhanced' => true])
-        ->and(AiInsightRun::query()->where('project_id', $project->getKey())->sole()->status)->toBe('completed')
+        ->and($run->refresh()->status)->toBe('completed')
         ->and($setting->refresh()->api_key)->toBe('secret-key');
 });
 
@@ -157,6 +181,7 @@ test('forced recommendation jobs reuse a completed analytics context', function 
     AnalyticsInsightAgent::fake()->preventStrayPrompts();
 
     (new GenerateInsightRecommendations(
+        (int) $run->getKey(),
         $project,
         $candidates,
         $periodStart,
@@ -204,18 +229,21 @@ test('recommendation jobs reject copied deterministic fallback text as AI enhanc
             'confidence_note' => 'Based on aggregate analytics changes.',
         ]],
     ]])->preventStrayPrompts();
+    $periodStart = now()->subDays(6)->startOfDay()->toIso8601String();
+    $periodEnd = now()->endOfDay()->toIso8601String();
+    $run = createQueuedAiInsightRun($project, $candidates, $periodStart, $periodEnd);
 
     (new GenerateInsightRecommendations(
+        (int) $run->getKey(),
         $project,
         $candidates,
-        now()->subDays(6)->startOfDay()->toIso8601String(),
-        now()->endOfDay()->toIso8601String(),
+        $periodStart,
+        $periodEnd,
         force: true,
     ))->handle(app(AiInsightContextBuilder::class), app(AiProviderRegistry::class));
 
-    $run = AiInsightRun::query()->where('project_id', $project->getKey())->sole();
     expect($insight->refresh()->metadata)->not->toHaveKey('ai_enhanced')
-        ->and($run->status)->toBe('skipped')
+        ->and($run->refresh()->status)->toBe('skipped')
         ->and($run->error)->toBe('AI returned no distinct recommendations for the current analytics changes.');
 });
 
@@ -251,17 +279,21 @@ test('recommendation jobs reject requests for individual visitor data', function
             'confidence_note' => 'Based on aggregate analytics changes.',
         ]],
     ]])->preventStrayPrompts();
+    $periodStart = now()->subDays(6)->startOfDay()->toIso8601String();
+    $periodEnd = now()->endOfDay()->toIso8601String();
+    $run = createQueuedAiInsightRun($project, $candidates, $periodStart, $periodEnd);
 
     (new GenerateInsightRecommendations(
+        (int) $run->getKey(),
         $project,
         $candidates,
-        now()->subDays(6)->startOfDay()->toIso8601String(),
-        now()->endOfDay()->toIso8601String(),
+        $periodStart,
+        $periodEnd,
         force: true,
     ))->handle(app(AiInsightContextBuilder::class), app(AiProviderRegistry::class));
 
     expect($insight->refresh()->metadata)->not->toHaveKey('ai_enhanced')
-        ->and(AiInsightRun::query()->sole()->status)->toBe('skipped');
+        ->and($run->refresh()->status)->toBe('skipped');
 });
 
 test('AI-enhanced recommendations remain visible after dashboard insights refresh', function () {
@@ -322,28 +354,61 @@ test('recommendation job records provider failures without breaking analytics', 
         'is_enabled' => true,
     ]);
     $insight = Insight::factory()->for($project)->create();
+    $candidates = [[
+        'fingerprint' => $insight->fingerprint,
+        'category' => 'traffic',
+        'metric' => 'visitors',
+        'label' => 'Visitors',
+        'current_value' => 100,
+        'previous_value' => 50,
+        'percentage_change' => 100,
+        'confidence' => 'medium',
+        'summary' => $insight->summary,
+        'recommendation' => $insight->recommendation,
+    ]];
+    $periodStart = now()->subDays(6)->startOfDay()->toIso8601String();
+    $periodEnd = now()->endOfDay()->toIso8601String();
+    $run = createQueuedAiInsightRun($project, $candidates, $periodStart, $periodEnd);
 
     AnalyticsInsightAgent::fake(fn (): never => throw new RuntimeException('provider unavailable'))
         ->preventStrayPrompts();
 
-    (new GenerateInsightRecommendations(
+    $job = new GenerateInsightRecommendations(
+        (int) $run->getKey(),
         $project,
-        [[
-            'fingerprint' => $insight->fingerprint,
-            'category' => 'traffic',
-            'metric' => 'visitors',
-            'label' => 'Visitors',
-            'current_value' => 100,
-            'previous_value' => 50,
-            'percentage_change' => 100,
-            'confidence' => 'medium',
-            'summary' => $insight->summary,
-            'recommendation' => $insight->recommendation,
-        ]],
-        now()->subDays(6)->startOfDay()->toIso8601String(),
-        now()->endOfDay()->toIso8601String(),
-    ))->handle(app(AiInsightContextBuilder::class), app(AiProviderRegistry::class));
+        $candidates,
+        $periodStart,
+        $periodEnd,
+    );
 
-    expect(AiInsightRun::query()->where('project_id', $project->getKey())->sole()->status)->toBe('failed')
-        ->and(AiInsightRun::query()->where('project_id', $project->getKey())->sole()->error)->toContain('provider unavailable');
+    try {
+        $job->handle(app(AiInsightContextBuilder::class), app(AiProviderRegistry::class));
+    } catch (RuntimeException $exception) {
+        $job->failed($exception);
+    }
+
+    expect($run->refresh()->status)->toBe('failed')
+        ->and($run->error)->toContain('provider unavailable');
+});
+
+test('recommendation job records worker timeouts as terminal failures', function () {
+    $project = Project::factory()->create();
+    $periodStart = now()->subDays(6)->startOfDay()->toIso8601String();
+    $periodEnd = now()->endOfDay()->toIso8601String();
+    $candidates = [['fingerprint' => 'visitors-increased']];
+    $run = createQueuedAiInsightRun($project, $candidates, $periodStart, $periodEnd);
+    $run->forceFill(['status' => 'running', 'started_at' => now()])->save();
+    $job = new GenerateInsightRecommendations(
+        (int) $run->getKey(),
+        $project,
+        $candidates,
+        $periodStart,
+        $periodEnd,
+    );
+
+    $job->failed(new TimeoutExceededException('The AI job timed out.'));
+
+    expect($run->refresh()->status)->toBe('failed')
+        ->and($run->error)->toBe('AI generation timed out before the provider responded. Please try again.')
+        ->and($run->completed_at)->not->toBeNull();
 });

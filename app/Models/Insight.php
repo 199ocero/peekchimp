@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/** @property array<string, mixed>|null $metadata */
 #[Fillable(['project_id', 'fingerprint', 'category', 'type', 'severity', 'metric', 'current_value', 'previous_value', 'percentage_change', 'confidence', 'summary', 'explanation', 'recommendation', 'metadata', 'period_start', 'period_end', 'generated_at', 'expires_at', 'dismissed_at'])]
 class Insight extends Model
 {

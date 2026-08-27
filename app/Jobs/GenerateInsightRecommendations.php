@@ -10,83 +10,94 @@ use App\Services\Analytics\AiInsightContextBuilder;
 use App\Services\Analytics\AiProviderRegistry;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\Attributes\FailOnTimeout;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Ai;
 use Throwable;
 
-class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
+#[FailOnTimeout]
+class GenerateInsightRecommendations implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
     use Dispatchable, Queueable, SerializesModels;
 
-    public int $tries = 3;
+    public int $tries = 1;
 
-    public int $timeout = 45;
+    public int $timeout = 135;
 
-    public int $uniqueFor = 300;
+    public int $uniqueFor = 180;
 
     /** @param array<int, array<string, mixed>> $candidates */
     public function __construct(
+        public int $runId,
         public Project $project,
         public array $candidates,
         public string $periodStart,
         public string $periodEnd,
         public bool $force = false,
     ) {
-        $this->onQueue('analytics');
+        $this->onQueue('ai');
     }
 
     public function uniqueId(): string
     {
-        $aggregateChanges = array_map(static fn (array $candidate): array => [
-            'fingerprint' => $candidate['fingerprint'] ?? null,
-            'current_value' => $candidate['current_value'] ?? null,
-            'previous_value' => $candidate['previous_value'] ?? null,
-            'percentage_change' => $candidate['percentage_change'] ?? null,
-        ], $this->candidates);
-
-        return $this->project->getKey().':'.sha1(json_encode($aggregateChanges).$this->periodStart.$this->periodEnd.($this->force ? ':manual' : ':automatic'));
-    }
-
-    /** @return array<int, int> */
-    public function backoff(): array
-    {
-        return [60, 300, 900];
+        return $this->runId.($this->force ? ':manual' : ':automatic');
     }
 
     public function handle(AiInsightContextBuilder $contextBuilder, AiProviderRegistry $providers): void
     {
+        $run = AiInsightRun::query()->find($this->runId);
+
+        if ($run === null || $run->status !== 'queued') {
+            return;
+        }
+
+        if (($run->updated_at ?? $run->created_at)->lte(now()->subSeconds((int) config('analytics.ai.stale_after_seconds', 180)))) {
+            $run->forceFill([
+                'status' => 'failed',
+                'error' => 'AI generation waited too long to start. Please try again.',
+                'completed_at' => now(),
+            ])->save();
+
+            return;
+        }
+
+        $claimed = AiInsightRun::query()
+            ->whereKey($run->getKey())
+            ->where('status', 'queued')
+            ->update([
+                'status' => 'running',
+                'started_at' => now(),
+                'completed_at' => null,
+                'error' => null,
+                'updated_at' => now(),
+            ]);
+
+        if ($claimed === 0) {
+            return;
+        }
+
+        $run->refresh();
         $owner = $this->project->user()->first()?->workspaceOwnerUser();
         $setting = $owner?->workspaceAiSetting()->first();
         $payload = $contextBuilder->build($this->project, $this->candidates, $this->periodStart, $this->periodEnd);
         $contextHash = $contextBuilder->hash($payload);
-        $cooldown = now()->subHours((int) config('analytics.ai.cooldown_hours', 6));
-
-        if (! $this->force && AiInsightRun::query()
-            ->where('project_id', $this->project->getKey())
-            ->where('status', 'completed')
-            ->where('updated_at', '>', $cooldown)
-            ->exists()) {
-            return;
-        }
-
-        $run = AiInsightRun::query()->firstOrCreate(
-            ['project_id' => $this->project->getKey(), 'context_hash' => $contextHash],
-            ['candidate_count' => count($payload['candidates'])],
-        );
-
-        if ($run->status === 'completed') {
-            return;
-        }
 
         $provider = $setting === null ? '' : (string) $setting->provider;
         $hasApiKey = is_string($setting?->api_key) && $setting->api_key !== '';
 
         if (! config('analytics.ai.enabled', true) || $setting === null || ! $setting->is_enabled || ! $providers->isSupported($provider) || ($providers->requiresApiKey($provider) && ! $hasApiKey)) {
-            $run->forceFill(['status' => 'skipped', 'candidate_count' => count($payload['candidates']), 'completed_at' => now()])->save();
+            $run->forceFill([
+                'status' => 'skipped',
+                'candidate_count' => count($payload['candidates']),
+                'error' => 'Configure and enable a supported AI provider before generating recommendations.',
+                'completed_at' => now(),
+            ])->save();
 
             return;
         }
@@ -94,10 +105,7 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
         $run->forceFill([
             'provider' => $setting->provider,
             'model' => $setting->model,
-            'status' => 'running',
             'candidate_count' => count($payload['candidates']),
-            'started_at' => now(),
-            'error' => null,
         ])->save();
         $runtimeProvider = 'peekchimp_'.$this->project->getKey().'_'.substr($contextHash, 0, 12);
 
@@ -107,7 +115,7 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
                 json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 provider: $runtimeProvider,
                 model: $setting->model,
-                timeout: $this->timeout,
+                timeout: (int) config('analytics.ai.request_timeout_seconds', 120),
             );
             $structured = is_array($response->structured ?? null) ? $response->structured : [];
             $enhancedInsightCount = $this->applyResponse($structured);
@@ -126,15 +134,32 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
                     : 'AI returned no distinct recommendations for the current analytics changes.',
                 'completed_at' => now(),
             ])->save();
-        } catch (Throwable $exception) {
-            $run->forceFill([
-                'status' => 'failed',
-                'error' => mb_substr($exception->getMessage(), 0, 2000),
-                'completed_at' => now(),
-            ])->save();
         } finally {
             Ai::forgetInstance($runtimeProvider);
         }
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        $message = $exception instanceof TimeoutExceededException
+            ? 'AI generation timed out before the provider responded. Please try again.'
+            : mb_substr($exception?->getMessage() ?? 'AI generation failed unexpectedly.', 0, 2000);
+
+        AiInsightRun::query()
+            ->whereKey($this->runId)
+            ->whereIn('status', ['queued', 'running'])
+            ->update([
+                'status' => 'failed',
+                'error' => $message,
+                'completed_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        Log::error('AI insight generation failed.', [
+            'run_id' => $this->runId,
+            'project_id' => $this->project->getKey(),
+            'exception' => $exception,
+        ]);
     }
 
     /** @param array<string, mixed> $structured */

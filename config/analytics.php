@@ -28,6 +28,8 @@ return [
         'max_payload_bytes' => 12288,
         'max_candidates' => 5,
         'cooldown_hours' => 6,
+        'request_timeout_seconds' => 120,
+        'stale_after_seconds' => 180,
     ],
 
     'geolocation' => [

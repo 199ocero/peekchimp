@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, usePage, usePoll } from '@inertiajs/vue3';
 import {
     Bot,
     CalendarDays,
@@ -110,7 +110,8 @@ type Analytics = {
     whatChanged: ActionableInsight[];
 };
 type AiInsightRun = {
-    status: 'running' | 'completed' | 'failed' | 'skipped';
+    id: number;
+    status: 'queued' | 'running' | 'completed' | 'failed' | 'skipped';
     error: string | null;
     updatedAt: string;
 };
@@ -134,16 +135,20 @@ defineOptions({
 
 const selectedRange = ref(props.analytics.range.key);
 const page = usePage();
-const isGeneratingAi = ref(false);
+const isSubmittingAi = ref(false);
 const isManualRefreshing = ref(false);
 const isChangingRange = ref(false);
 const activePageTab = ref<'top' | 'entry' | 'exit'>('top');
 const showAllPages = ref(false);
 let refreshTimer: number | undefined;
-let aiInsightRefreshTimer: number | undefined;
-let aiInsightRefreshAttempts = 0;
-let aiInsightGenerationBaseline: string | null = null;
-let aiInsightRunBaseline: string | null = null;
+let aiPollRunId: number | null = null;
+
+const isGeneratingAi = computed(
+    () =>
+        isSubmittingAi.value ||
+        props.aiInsightRun?.status === 'queued' ||
+        props.aiInsightRun?.status === 'running',
+);
 
 const comparisonLabel = computed(() => {
     if (props.analytics.range.key === '7d') {
@@ -410,18 +415,6 @@ const displayedInsights = computed<DisplayInsight[]>(() => {
 const hasAiEnhancedInsights = computed(() =>
     displayedInsights.value.some((insight) => insight.aiEnhanced),
 );
-const latestAiInsightGeneration = computed(() =>
-    actionableInsights.value.reduce<string | null>((latest, insight) => {
-        if (!insight.ai_generated_at) {
-            return latest;
-        }
-
-        return latest === null || insight.ai_generated_at > latest
-            ? insight.ai_generated_at
-            : latest;
-    }, null),
-);
-
 const acquisitionTabs = computed(() => [
     {
         id: 'sources',
@@ -612,7 +605,7 @@ function loadRange(range: string): void {
         {
             preserveState: true,
             preserveScroll: true,
-            only: ['analytics'],
+            only: ['analytics', 'aiInsightRun'],
             onFinish: () => {
                 isChangingRange.value = false;
             },
@@ -623,7 +616,7 @@ function loadRange(range: string): void {
 function refresh(): void {
     isManualRefreshing.value = true;
     router.reload({
-        only: ['analytics'],
+        only: ['analytics', 'aiInsightRun'],
         onFinish: () => {
             isManualRefreshing.value = false;
         },
@@ -631,11 +624,7 @@ function refresh(): void {
 }
 
 function generateAiInsights(): void {
-    stopAiInsightPolling();
-    aiInsightGenerationBaseline = latestAiInsightGeneration.value;
-    aiInsightRunBaseline = props.aiInsightRun?.updatedAt ?? null;
-    isGeneratingAi.value = true;
-    let receivedQueueConfirmation = false;
+    isSubmittingAi.value = true;
     router.post(
         GenerateDashboardAiInsightsController().url,
         { range: selectedRange.value },
@@ -643,106 +632,98 @@ function generateAiInsights(): void {
             preserveScroll: true,
             onFlash: (flash) => {
                 const generation = flash.aiInsightGeneration as
-                    | { queued?: boolean; message?: string }
+                    | { queued?: boolean; runId?: number; message?: string }
                     | undefined;
 
-                if (generation === undefined) {
-                    return;
+                if (generation?.queued === true) {
+                    aiPollRunId = generation.runId ?? null;
+
+                    if (!aiInsightPolling.value) {
+                        startAiInsightPolling();
+                    }
                 }
-
-                receivedQueueConfirmation = true;
-
-                if (generation.queued === true) {
-                    pollForAiInsights();
-
-                    return;
-                }
-
-                stopAiInsightPolling();
             },
             onError: () => {
-                stopAiInsightPolling();
                 toast.error('Peekchimp could not queue AI insight generation.');
             },
             onFinish: () => {
-                if (! receivedQueueConfirmation && isGeneratingAi.value) {
-                    stopAiInsightPolling();
-                    toast.error(
-                        'Peekchimp did not confirm that the AI job was queued.',
-                    );
-                }
+                isSubmittingAi.value = false;
             },
         },
     );
 }
 
-function pollForAiInsights(): void {
-    aiInsightRefreshTimer = window.setTimeout(() => {
-        router.reload({
-            only: ['analytics', 'aiInsightRun'],
-            onFinish: () => {
-                aiInsightRefreshAttempts += 1;
-                const latestRun = props.aiInsightRun ?? null;
-                const hasNewRunState =
-                    latestRun !== null &&
-                    latestRun.updatedAt !== aiInsightRunBaseline;
+const {
+    start: startAiInsightPolling,
+    stop: stopAiInsightPolling,
+    polling: aiInsightPolling,
+} = usePoll(
+    2500,
+    {
+        only: ['aiInsightRun'],
+    },
+    {
+        autoStart: false,
+        keepAlive: true,
+        mode: 'rest',
+    },
+);
 
-                if (
-                    hasNewRunState &&
-                    latestRun.status === 'completed' &&
-                    latestAiInsightGeneration.value !== null &&
-                    latestAiInsightGeneration.value !==
-                        aiInsightGenerationBaseline
-                ) {
-                    stopAiInsightPolling();
+watch(
+    () =>
+        props.aiInsightRun
+            ? `${props.aiInsightRun.id}:${props.aiInsightRun.status}:${props.aiInsightRun.updatedAt}`
+            : null,
+    () => {
+        const run = props.aiInsightRun;
+        const isActive = run?.status === 'queued' || run?.status === 'running';
+
+        if (run && isActive) {
+            aiPollRunId = run.id;
+
+            if (!aiInsightPolling.value) {
+                startAiInsightPolling();
+            }
+
+            return;
+        }
+
+        if (aiInsightPolling.value) {
+            stopAiInsightPolling();
+        }
+
+        if (!run || aiPollRunId !== run.id) {
+            return;
+        }
+
+        aiPollRunId = null;
+
+        if (run.status === 'completed') {
+            router.reload({
+                only: ['analytics'],
+                onSuccess: () => {
                     toast.success('AI recommendations updated.');
+                },
+            });
 
-                    return;
-                }
+            return;
+        }
 
-                if (
-                    hasNewRunState &&
-                    (latestRun.status === 'failed' ||
-                        latestRun.status === 'skipped')
-                ) {
-                    const message =
-                        latestRun.error ||
-                        'AI finished without producing a useful recommendation.';
-                    stopAiInsightPolling();
-                    toast.error(message);
-
-                    return;
-                }
-
-                if (aiInsightRefreshAttempts >= 18) {
-                    stopAiInsightPolling();
-                    toast.error(
-                        'No AI job completed. Confirm the queue worker is running, then try again.',
-                    );
-
-                    return;
-                }
-
-                pollForAiInsights();
-            },
-        });
-    }, 2500);
-}
-
-function stopAiInsightPolling(): void {
-    if (aiInsightRefreshTimer !== undefined) {
-        window.clearTimeout(aiInsightRefreshTimer);
-        aiInsightRefreshTimer = undefined;
-    }
-
-    aiInsightRefreshAttempts = 0;
-    isGeneratingAi.value = false;
-}
+        if (run.status === 'failed' || run.status === 'skipped') {
+            toast.error(
+                run.error ||
+                    'AI finished without producing a useful recommendation.',
+            );
+        }
+    },
+    { immediate: true },
+);
 
 watch(
     () => props.analytics.range.key,
     (rangeKey) => {
         selectedRange.value = rangeKey;
+        aiPollRunId = null;
     },
 );
 
@@ -752,7 +733,7 @@ watch(activePageTab, () => {
 
 onMounted(() => {
     refreshTimer = window.setInterval(
-        () => router.reload({ only: ['analytics'] }),
+        () => router.reload({ only: ['analytics', 'aiInsightRun'] }),
         30000,
     );
 });
@@ -761,8 +742,6 @@ onBeforeUnmount(() => {
     if (refreshTimer !== undefined) {
         window.clearInterval(refreshTimer);
     }
-
-    stopAiInsightPolling();
 });
 </script>
 
@@ -935,7 +914,7 @@ onBeforeUnmount(() => {
                                             ? 'AI-enhanced recommendations based on aggregate analytics changes.'
                                             : analytics.comparison.available
                                               ? 'Data-backed changes and recommendations from your analytics.'
-                                            : 'Useful current-period facts while Peekchimp builds a reliable comparison.'
+                                              : 'Useful current-period facts while Peekchimp builds a reliable comparison.'
                                     }}
                                 </p>
                             </div>
@@ -968,6 +947,13 @@ onBeforeUnmount(() => {
                             </Button>
                         </div>
                     </div>
+
+                    <p
+                        v-if="aiInsightRun?.status === 'failed'"
+                        class="mt-3 text-xs text-destructive"
+                    >
+                        {{ aiInsightRun.error }} You can try generating again.
+                    </p>
 
                     <div class="mt-6 grid gap-3 md:grid-cols-3">
                         <article

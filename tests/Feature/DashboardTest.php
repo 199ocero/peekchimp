@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\AiInsightRun;
 use App\Models\User;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
     $response = $this->get(route('dashboard'));
@@ -19,10 +21,18 @@ test('authenticated users without a verified website are redirected to onboardin
 
 test('authenticated users with a verified website can visit the dashboard', function () {
     $user = User::factory()->withVerifiedWebsite()->create();
+    $project = $user->projects()->sole();
+    $run = AiInsightRun::factory()->for($project)->create([
+        'status' => 'failed',
+        'error' => 'Provider unavailable.',
+    ]);
 
     $response = $this->actingAs($user)->get(route('dashboard'));
 
-    $response->assertOk();
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('aiInsightRun.status', 'failed')
+        ->where('aiInsightRun.error', 'Provider unavailable.')
+        ->where('aiInsightRun.updatedAt', $run->updated_at->toIso8601String()));
 });
 
 test('dashboard keeps the activity visualization without the installation prompt', function () {
@@ -38,48 +48,44 @@ test('dashboard keeps the activity visualization without the installation prompt
         ->not->toContain('installationSnippet');
 });
 
-test('dashboard prioritizes helpful plain-language metrics', function () {
+test('dashboard follows the reference hierarchy with useful plain-language metrics', function () {
     $dashboardPage = file_get_contents(resource_path('js/pages/Dashboard.vue'));
-    $dashboardOverview = file_get_contents(resource_path('js/components/dashboard/DashboardOverview.vue'));
+    $metricTrendCard = file_get_contents(resource_path('js/components/dashboard/MetricTrendCard.vue'));
+    $trafficChart = file_get_contents(resource_path('js/components/dashboard/DashboardTrafficChart.vue'));
 
-    expect($dashboardPage.$dashboardOverview)
-        ->toContain("label: 'Active now'")
-        ->toContain('icon: Activity')
-        ->toContain('Estimated unique visitors seen in the last five minutes.')
+    expect($dashboardPage.$metricTrendCard.$trafficChart)
         ->toContain("label: 'Visitors'")
-        ->toContain('icon: UserRound')
-        ->toContain("detail: 'Estimated visitors during this period.'")
+        ->toContain('icon: UsersRound')
+        ->toContain('Estimated unique visitors during the selected period.')
         ->toContain("label: 'Views'")
         ->toContain('icon: ScanEye')
-        ->toContain("detail: 'Total page loads, including repeats.'")
+        ->toContain('Total page loads, including repeat views.')
         ->toContain("label: 'Bounce rate'")
-        ->toContain('icon: LogOut')
-        ->toContain('Share of visits with only one page view.')
-        ->toContain("label: 'Pages per visitor'")
-        ->toContain('icon: FileStack')
-        ->toContain("detail: 'Average pages viewed by each visitor.'")
-        ->toContain("label: 'Average visit time'")
+        ->toContain('icon: GitBranch')
+        ->toContain("label: 'Avg. visit time'")
         ->toContain('icon: Timer')
-        ->toContain("detail: 'How long each visit lasted on average.'")
-        ->toContain('Focus')
-        ->toContain('Overview')
-        ->toContain('Primary metrics')
-        ->toContain('Engagement metrics')
-        ->toContain('Dashboard analysis')
-        ->toContain("{ id: 'insights', label: 'Insights' }")
-        ->toContain("{ id: 'pages', label: 'Pages' }")
-        ->toContain("{ id: 'outcomes', label: 'Outcomes' }")
+        ->toContain("label: 'Conversions'")
+        ->toContain('icon: Target')
+        ->toContain('Analytics insights')
+        ->toContain('Top insights')
+        ->toContain('Traffic over time')
+        ->toContain('Top pages')
         ->toContain('Acquisition')
         ->toContain('Audience')
         ->toContain('AI referrals')
-        ->toContain('individual answers stay private')
-        ->toContain('primaryActionableInsight')
-        ->toContain("return improved ? 'text-success' : 'text-destructive'")
-        ->not->toContain('MetricTrendCard')
-        ->not->toContain('metric-sparkline-reveal')
-        ->not->toContain('Visitor overview')
-        ->not->toContain("label: 'Pageviews'")
-        ->not->toContain("label: 'Unique visitors'");
+        ->toContain('Building baseline')
+        ->toContain('Useful current-period facts')
+        ->toContain('<MetricTrendCard')
+        ->toContain('comparisonAvailable')
+        ->toContain('Collecting a previous matching period')
+        ->toContain("return 'text-success'")
+        ->toContain("return 'text-destructive'")
+        ->toContain('metric-sparkline-reveal')
+        ->toContain("activePageTab = ref<'top' | 'entry' | 'exit'>('top')")
+        ->toContain('@click="showAllPages = !showAllPages"')
+        ->toContain(':href="editAi().url"')
+        ->not->toContain('View all changes')
+        ->not->toContain('Open one area at a time');
 });
 
 test('dashboard uses local logos with readable fallbacks', function () {
@@ -104,7 +110,7 @@ test('dashboard date range select keeps its chevron inset from the edge', functi
         ->toContain('background-position: right 0.875rem center;');
 });
 
-test('app header keeps only compact website and account controls', function () {
+test('app header includes the reference navigation and compact account controls', function () {
     $appHeader = file_get_contents(resource_path('js/components/AppHeader.vue'));
 
     expect($appHeader)
@@ -112,6 +118,9 @@ test('app header keeps only compact website and account controls', function () {
         ->toContain('aria-label="Peekchimp dashboard"')
         ->toContain('bg-sidebar-border/80')
         ->toContain('<AppearanceMenu />')
+        ->toContain("label: 'Overview'")
+        ->toContain("label: 'AI visibility'")
+        ->toContain("label: 'Goals'")
         ->not->toContain('mainNavItems')
         ->not->toContain('NavigationMenu');
 });

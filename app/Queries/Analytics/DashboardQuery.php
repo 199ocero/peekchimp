@@ -48,7 +48,10 @@ class DashboardQuery
             'utm_campaign' => $filters['utm_campaign'] ?? null,
         ]);
         $cacheBust = (string) ($filters['refresh'] ?? '');
-        $cacheKey = 'dashboard:v7:'.$project->getKey().':'.$rangeKey.':'.$from->timestamp.':'.$to->timestamp.':'.sha1((string) json_encode($normalizedFilters)).':'.($withInsights ? 'insights' : 'public').':'.$cacheBust;
+        $aiInsightsVersion = $withInsights
+            ? (string) Cache::get('dashboard:ai-insights-version:'.$project->getKey(), 'initial')
+            : 'public';
+        $cacheKey = 'dashboard:v9:'.$project->getKey().':'.$rangeKey.':'.$from->timestamp.':'.$to->timestamp.':'.sha1((string) json_encode($normalizedFilters)).':'.($withInsights ? 'insights' : 'public').':'.$aiInsightsVersion.':'.$cacheBust;
 
         return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($project, $from, $to, $rangeKey, $rangeLabel, $normalizedFilters, $withInsights): array {
             $activeAt = CarbonImmutable::now('UTC');
@@ -80,8 +83,9 @@ class DashboardQuery
             ];
 
             [$previousFrom, $previousTo] = $this->previousRange($project, $from, $to, $activeAt);
+            $hasComparisonData = $this->hasTraffic($project, $previousFrom, $previousTo, $normalizedFilters);
             $actionableInsights = [];
-            if ($withInsights) {
+            if ($withInsights && $hasComparisonData) {
                 $actionableInsights = $this->insightGenerationService->generate(
                     $project,
                     $from,
@@ -108,6 +112,9 @@ class DashboardQuery
                     'to' => $to->toDateString(),
                     'interval' => $this->usesHourlyBuckets($rangeKey) ? 'hour' : 'day',
                 ],
+                'comparison' => [
+                    'available' => $hasComparisonData,
+                ],
                 'metrics' => $metrics,
                 'metricTrends' => $this->metricTrends($project, $from, $to, $normalizedFilters, $rangeKey, $metrics, $timeseries, $activeAt),
                 'timeseries' => $timeseries,
@@ -125,7 +132,7 @@ class DashboardQuery
                 'utmSources' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'utm_source', 'None'),
                 'aiReferrals' => $this->aiReferrals($project, $from, $to, $normalizedFilters),
                 'aiTraffic' => $this->aiTraffic($project, $from, $to, $normalizedFilters),
-                'insights' => $this->dashboardInsightBuilder->build($sessions, $singlePageRate, $referrers),
+                'insights' => $this->dashboardInsightBuilder->build($sessions, $singlePageRate, $referrers, $hasComparisonData),
                 'whatChanged' => $actionableInsights,
                 'actionableInsights' => $actionableInsights,
                 'goals' => $conversionOverview['goals'],
@@ -139,6 +146,13 @@ class DashboardQuery
                 )->values()->all(),
             ];
         });
+    }
+
+    /** @param array<string, mixed> $filters */
+    private function hasTraffic(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters): bool
+    {
+        return $this->sessions($project, $from, $to, $filters)->exists()
+            || $this->events($project, $from, $to, $filters)->where('event_name', 'page_view')->exists();
     }
 
     /**
@@ -359,6 +373,7 @@ class DashboardQuery
         $previousAverageDuration = $previousSessionSummary['averageDuration'];
         $previousBounceRate = $previousSessions > 0 ? round(($previousBounces / $previousSessions) * 100, 1) : 0;
         $previousViewsPerVisitor = $previousVisitors > 0 ? round($previousPageviews / $previousVisitors, 2) : 0;
+        $previousConversions = $this->conversionOverview($project, $previousFrom, $previousTo, $filters)['conversions'];
         $sessionSeries = $this->sessionMetricSeries($project, $from, $to, $filters, $rangeKey);
         $previousActiveVisitors = $this->activeVisitorsInWindow(
             $project,
@@ -407,6 +422,11 @@ class DashboardQuery
                 $metrics['averageDuration'],
                 round($previousAverageDuration),
                 $sessionSeries['averageDuration'],
+            ),
+            'conversions' => $this->metricTrend(
+                $metrics['conversions'],
+                $previousConversions,
+                [$previousConversions, $metrics['conversions']],
             ),
         ];
     }

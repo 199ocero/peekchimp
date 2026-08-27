@@ -40,6 +40,11 @@ class InsightGenerationService
         $previousTo ??= $from->subSecond();
         $current = $this->snapshot($project, $from, $to, $filters);
         $previous = $this->snapshot($project, $previousFrom, $previousTo, $filters);
+
+        if ($previous['pageviews'] === 0 && $previous['sessions'] === 0) {
+            return [];
+        }
+
         $candidates = [];
 
         foreach ([
@@ -151,38 +156,58 @@ class InsightGenerationService
                 'summary' => $summary,
                 'explanation' => $this->explanation($candidate),
                 'recommendation' => $recommendation,
-                'period_start' => $from,
-                'period_end' => $to,
+                'period_start' => $from->toIso8601String(),
+                'period_end' => $to->toIso8601String(),
             ];
 
             $record = null;
 
             if ($persist) {
-                $record = Insight::query()->updateOrCreate(
-                    ['project_id' => $project->getKey(), 'fingerprint' => $fingerprint, 'period_start' => $from, 'period_end' => $to],
-                    [
-                        'category' => $candidate['category'],
-                        'type' => $candidate['category'].'_change',
-                        'severity' => $candidate['severity'],
-                        'metric' => $candidate['metric'],
-                        'current_value' => $candidate['current_value'],
-                        'previous_value' => $candidate['previous_value'],
-                        'percentage_change' => $percentage,
-                        'confidence' => $candidate['confidence'],
-                        'summary' => $summary,
-                        'explanation' => $payload['explanation'],
-                        'recommendation' => $recommendation,
-                        'metadata' => $candidate['metadata'],
-                        'generated_at' => now(),
-                        'expires_at' => now()->addDays(2),
+                $record = Insight::query()->firstOrNew([
+                    'project_id' => $project->getKey(),
+                    'fingerprint' => $fingerprint,
+                    'period_start' => $from,
+                    'period_end' => $to,
+                ]);
+                $existingMetadata = (array) $record->metadata;
+                $isAiEnhanced = (bool) ($existingMetadata['ai_enhanced'] ?? false);
+                $record->fill([
+                    'category' => $candidate['category'],
+                    'type' => $candidate['category'].'_change',
+                    'severity' => $candidate['severity'],
+                    'metric' => $candidate['metric'],
+                    'current_value' => $candidate['current_value'],
+                    'previous_value' => $candidate['previous_value'],
+                    'percentage_change' => $percentage,
+                    'confidence' => $candidate['confidence'],
+                    'summary' => $summary,
+                    'explanation' => $isAiEnhanced ? $record->explanation : $payload['explanation'],
+                    'recommendation' => $isAiEnhanced ? $record->recommendation : $recommendation,
+                    'metadata' => [
+                        ...$candidate['metadata'],
+                        ...($isAiEnhanced ? [
+                            'ai_enhanced' => true,
+                            'ai_generated_at' => $existingMetadata['ai_generated_at'] ?? null,
+                            'ai_priority' => $existingMetadata['ai_priority'] ?? null,
+                            'ai_confidence_note' => $existingMetadata['ai_confidence_note'] ?? null,
+                        ] : []),
                     ],
-                );
+                    'generated_at' => now(),
+                    'expires_at' => now()->addDays(2),
+                ]);
+                $record->save();
 
                 if ($record->dismissed_at !== null) {
                     continue;
                 }
 
                 $payload['id'] = (int) $record->getKey();
+                $payload['explanation'] = (string) $record->explanation;
+                $payload['recommendation'] = (string) $record->recommendation;
+                $payload['ai_enhanced'] = $isAiEnhanced;
+                $payload['ai_generated_at'] = $isAiEnhanced
+                    ? ($existingMetadata['ai_generated_at'] ?? null)
+                    : null;
                 $payload['actions'] = $this->insightActions->actions($record);
             }
 
@@ -322,7 +347,7 @@ class InsightGenerationService
     private function summary(string $label, string $direction, ?float $percentage, int|float $current, int|float $previous): string
     {
         if ($percentage === null) {
-            return "{$label} {$direction} to ".number_format($current, 0).'.';
+            return "{$label} first appeared with ".number_format($current, 0).' (previously '.number_format($previous, 0).').';
         }
 
         return sprintf('%s %s %s%% (%s vs %s).', $label, $direction, abs($percentage), number_format($current, 0), number_format($previous, 0));

@@ -32,8 +32,10 @@ test('dashboard reports persisted analytics metrics', function () {
         ->where('analytics.metrics.sessions', 2)
         ->where('analytics.metrics.activeVisitors', 2)
         ->where('analytics.metrics.bounceRate', 0)
-        ->where('analytics.insights.0.type', 'insufficient_data')
-        ->where('analytics.insights.0.value', 2));
+        ->where('analytics.comparison.available', false)
+        ->where('analytics.insights.0.type', 'comparison_pending')
+        ->where('analytics.insights.0.value', 2)
+        ->count('analytics.actionableInsights', 0));
 });
 
 test('dashboard groups every selected-range visit by country', function () {
@@ -232,6 +234,9 @@ test('dashboard compares each top metric with its previous period', function () 
         ->where('analytics.metricTrends.viewsPerVisitor.change', -25)
         ->where('analytics.metricTrends.averageDuration.previous', 60)
         ->where('analytics.metricTrends.averageDuration.change', 100)
+        ->where('analytics.metricTrends.conversions.previous', 0)
+        ->where('analytics.metricTrends.conversions.change', 0)
+        ->where('analytics.comparison.available', true)
         ->has('analytics.metricTrends.averageDuration.series', 24));
 });
 
@@ -257,6 +262,11 @@ test('dashboard reports supported engagement and attribution insights', function
         'project_id' => $project->id,
         'event_name' => 'page_view',
         'referrer_host' => 'google.com',
+    ]);
+    AnalyticsSession::factory()->create([
+        'project_id' => $project->id,
+        'started_at' => now()->subDays(8),
+        'last_seen_at' => now()->subDays(8),
     ]);
 
     $response = $this->actingAs($user)->get(route('dashboard'));

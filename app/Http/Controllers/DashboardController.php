@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AiInsightRun;
+use App\Models\Project;
 use App\Queries\Analytics\DashboardQuery;
 use App\Services\Websites\CurrentWebsiteResolver;
 use Illuminate\Http\RedirectResponse;
@@ -44,7 +46,27 @@ class DashboardController extends Controller
                 'domains' => $project->domains->pluck('domain')->values(),
             ],
             'analytics' => $analytics,
+            'aiInsightRun' => fn (): ?array => $this->latestAiInsightRun($project),
             'filters' => $filters,
         ]);
+    }
+
+    /** @return array{status: string, error: string|null, updatedAt: string}|null */
+    private function latestAiInsightRun(Project $project): ?array
+    {
+        $run = AiInsightRun::query()
+            ->where('project_id', $project->getKey())
+            ->latest('updated_at')
+            ->first();
+
+        if ($run === null) {
+            return null;
+        }
+
+        return [
+            'status' => (string) $run->status,
+            'error' => is_string($run->error) ? $run->error : null,
+            'updatedAt' => $run->updated_at->toIso8601String(),
+        ];
     }
 }

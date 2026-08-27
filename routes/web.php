@@ -4,6 +4,7 @@ use App\Http\Controllers\AiTrafficController;
 use App\Http\Controllers\AiVisibilityController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FunnelController;
+use App\Http\Controllers\GenerateDashboardAiInsightsController;
 use App\Http\Controllers\GoalController;
 use App\Http\Controllers\ImportantActionController;
 use App\Http\Controllers\InsightActionController;
@@ -78,6 +79,7 @@ Route::middleware(['auth', 'verified', 'website.configured'])->group(function ()
 
 Route::middleware(['auth', 'verified', 'website.configured'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+    Route::post('dashboard/ai-insights', GenerateDashboardAiInsightsController::class)->name('dashboard.ai-insights.generate');
     Route::get('websites/{project}/ai-traffic', AiTrafficController::class)->name('websites.ai-traffic');
     Route::get('websites/{project}/ai-visibility', [AiVisibilityController::class, 'show'])->name('websites.ai-visibility.show');
     Route::post('websites/{project}/ai-visibility/scan', [AiVisibilityController::class, 'scan'])->name('websites.ai-visibility.scan');

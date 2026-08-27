@@ -14,8 +14,16 @@ class DashboardInsightBuilder
      * @param  array<int, array{label: string, value: int}>  $referrers
      * @return array<int, array{type: string, tone: string, value: float|int}>
      */
-    public function build(int $visits, float $singlePageRate, array $referrers): array
+    public function build(int $visits, float $singlePageRate, array $referrers, bool $hasComparisonData = true): array
     {
+        if (! $hasComparisonData) {
+            return [[
+                'type' => 'comparison_pending',
+                'tone' => 'neutral',
+                'value' => $visits,
+            ]];
+        }
+
         if ($visits < self::MinimumVisits) {
             return [[
                 'type' => 'insufficient_data',

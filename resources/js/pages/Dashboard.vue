@@ -1,48 +1,40 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
-    Activity,
-    CircleCheck,
+    Bot,
+    CalendarDays,
+    ChartNoAxesCombined,
     CircleGauge,
-    FileStack,
+    Clock3,
+    FileInput,
     FileText,
+    GitBranch,
+    House,
+    Info,
     Lightbulb,
-    Link2,
-    LogOut,
-    MoreHorizontal,
     RefreshCw,
     ScanEye,
-    Settings,
+    Share2,
+    Smartphone,
+    Sparkles,
+    Target,
     Timer,
-    TriangleAlert,
-    UserRound,
+    TrendingUp,
     UsersRound,
     Waypoints,
 } from '@lucide/vue';
 import type { Component } from 'vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
+import GenerateDashboardAiInsightsController from '@/actions/App/Http/Controllers/GenerateDashboardAiInsightsController';
 import DashboardBreakdownCard from '@/components/dashboard/DashboardBreakdownCard.vue';
-import DashboardOverview from '@/components/dashboard/DashboardOverview.vue';
+import DashboardTrafficChart from '@/components/dashboard/DashboardTrafficChart.vue';
+import MetricTrendCard from '@/components/dashboard/MetricTrendCard.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { dashboard } from '@/routes';
-import { store as insightActionStore } from '@/routes/insights/actions';
-import { aiTraffic as aiTrafficRoute } from '@/routes/websites';
-import { index as actionsIndex } from '@/routes/websites/actions';
-import { show as aiVisibilityShow } from '@/routes/websites/ai-visibility';
-import { index as funnelsIndex } from '@/routes/websites/funnels';
+import { edit as editAi } from '@/routes/settings/ai';
 import { index as goalsIndex } from '@/routes/websites/goals';
 import { edit as editWebsiteSettings } from '@/routes/websites/settings';
 
@@ -57,30 +49,18 @@ type MetricTrend = {
     change: number | null;
     series: number[];
 };
-type DashboardInsight = {
-    type:
-        | 'insufficient_data'
-        | 'high_single_page_rate'
-        | 'unattributed_traffic'
-        | 'healthy_engagement';
-    tone: 'neutral' | 'attention' | 'positive';
-    value: number;
-};
 type ActionableInsight = {
     id: number;
     fingerprint: string;
     category: string;
-    label: string;
-    metric: string;
     current_value: number;
     previous_value: number;
     percentage_change: number | null;
-    confidence: string;
     summary: string;
     explanation: string;
     recommendation: string;
-    severity: string;
-    actions: Array<{ key: string; label: string; description: string }>;
+    ai_enhanced?: boolean;
+    ai_generated_at?: string | null;
 };
 type Analytics = {
     range: {
@@ -90,6 +70,7 @@ type Analytics = {
         to: string;
         interval: 'hour' | 'day';
     };
+    comparison: { available: boolean };
     metrics: {
         pageviews: number;
         visitors: number;
@@ -102,13 +83,11 @@ type Analytics = {
         conversionRate: number;
     };
     metricTrends: {
-        activeVisitors: MetricTrend;
         visitors: MetricTrend;
-        sessions: MetricTrend;
         pageviews: MetricTrend;
         bounceRate: MetricTrend;
-        viewsPerVisitor: MetricTrend;
         averageDuration: MetricTrend;
+        conversions: MetricTrend;
     };
     timeseries: Array<{
         label: string;
@@ -127,43 +106,24 @@ type Analytics = {
     campaigns: Breakdown[];
     mediums: Breakdown[];
     aiReferrals: { totalVisits: number; sources: Breakdown[] };
-    insights: DashboardInsight[];
-    whatChanged: ActionableInsight[];
     actionableInsights: ActionableInsight[];
-    importantActions: Array<{
-        id: number;
-        name: string;
-        views: number;
-        clicks: number;
-        ctr: number;
-    }>;
-    goals: Array<{
-        id: number;
-        name: string;
-        conversions: number;
-        conversionRate: number;
-        trend: { previous: number; change: number | null };
-    }>;
-    aiTraffic: {
-        visitors: number;
-        visits: number;
-        pageviews: number;
-        conversions: number;
-        sources: Breakdown[];
-        pages: Breakdown[];
-    };
+    whatChanged: ActionableInsight[];
+};
+type AiInsightRun = {
+    status: 'running' | 'completed' | 'failed' | 'skipped';
+    error: string | null;
+    updatedAt: string;
 };
 
 const props = defineProps<{
     project: {
         id: number;
         name: string;
-        siteKey: string;
         timezone: string;
         domains: string[];
     };
     analytics: Analytics;
-    filters: Record<string, string | undefined>;
+    aiInsightRun?: AiInsightRun | null;
 }>();
 
 defineOptions({
@@ -173,46 +133,40 @@ defineOptions({
 });
 
 const selectedRange = ref(props.analytics.range.key);
+const page = usePage();
+const isGeneratingAi = ref(false);
 const isManualRefreshing = ref(false);
 const isChangingRange = ref(false);
+const activePageTab = ref<'top' | 'entry' | 'exit'>('top');
+const showAllPages = ref(false);
 let refreshTimer: number | undefined;
+let aiInsightRefreshTimer: number | undefined;
+let aiInsightRefreshAttempts = 0;
+let aiInsightGenerationBaseline: string | null = null;
+let aiInsightRunBaseline: string | null = null;
 
-const metricCards = computed<
-    Array<{
-        label: string;
-        value: string | number;
-        detail: string;
-        icon: Component;
-        currentValue: number;
-        previousValue: number;
-        previousValueLabel: string;
-        change: number | null;
-        series: number[];
-        comparisonLabel?: string;
-        inverse?: boolean;
-        isLive?: boolean;
-    }>
->(() => [
+const comparisonLabel = computed(() => {
+    if (props.analytics.range.key === '7d') {
+        return 'Previous 7 days';
+    }
+
+    if (props.analytics.range.key === '30d') {
+        return 'Previous 30 days';
+    }
+
+    return 'Previous matching period';
+});
+
+const metricCards = computed(() => [
     {
-        label: 'Active now',
-        value: formatNumber(props.analytics.metrics.activeVisitors),
-        detail: 'Estimated unique visitors seen in the last five minutes. This ignores the selected date range.',
-        icon: Activity,
-        currentValue: props.analytics.metrics.activeVisitors,
-        previousValue: props.analytics.metricTrends.activeVisitors.previous,
-        previousValueLabel: formatNumber(
-            props.analytics.metricTrends.activeVisitors.previous,
-        ),
-        change: props.analytics.metricTrends.activeVisitors.change,
-        series: props.analytics.metricTrends.activeVisitors.series,
-        comparisonLabel: 'Previous five minutes',
-        isLive: true,
-    },
-    {
+        id: 'visitors',
         label: 'Visitors',
         value: formatNumber(props.analytics.metrics.visitors),
-        detail: 'Estimated visitors during this period.',
-        icon: UserRound,
+        detail: 'Estimated unique visitors during the selected period.',
+        icon: UsersRound,
+        accent: 'emerald' as const,
+        actionHref: '',
+        actionLabel: '',
         currentValue: props.analytics.metrics.visitors,
         previousValue: props.analytics.metricTrends.visitors.previous,
         previousValueLabel: formatNumber(
@@ -222,23 +176,14 @@ const metricCards = computed<
         series: props.analytics.metricTrends.visitors.series,
     },
     {
-        label: 'Visits',
-        value: formatNumber(props.analytics.metrics.sessions),
-        detail: 'Total sessions during this period.',
-        icon: UsersRound,
-        currentValue: props.analytics.metrics.sessions,
-        previousValue: props.analytics.metricTrends.sessions.previous,
-        previousValueLabel: formatNumber(
-            props.analytics.metricTrends.sessions.previous,
-        ),
-        change: props.analytics.metricTrends.sessions.change,
-        series: props.analytics.metricTrends.sessions.series,
-    },
-    {
+        id: 'views',
         label: 'Views',
         value: formatNumber(props.analytics.metrics.pageviews),
-        detail: 'Total page loads, including repeats.',
+        detail: 'Total page loads, including repeat views.',
         icon: ScanEye,
+        accent: 'cyan' as const,
+        actionHref: '',
+        actionLabel: '',
         currentValue: props.analytics.metrics.pageviews,
         previousValue: props.analytics.metricTrends.pageviews.previous,
         previousValueLabel: formatNumber(
@@ -248,10 +193,14 @@ const metricCards = computed<
         series: props.analytics.metricTrends.pageviews.series,
     },
     {
+        id: 'bounce-rate',
         label: 'Bounce rate',
         value: formatPercentage(props.analytics.metrics.bounceRate),
-        detail: 'Share of visits with only one page view. Lower is not always better.',
-        icon: LogOut,
+        detail: 'Share of visits that ended after one page. Lower is usually better.',
+        icon: GitBranch,
+        accent: 'orange' as const,
+        actionHref: '',
+        actionLabel: '',
         currentValue: props.analytics.metrics.bounceRate,
         previousValue: props.analytics.metricTrends.bounceRate.previous,
         previousValueLabel: formatPercentage(
@@ -262,23 +211,14 @@ const metricCards = computed<
         inverse: true,
     },
     {
-        label: 'Pages per visitor',
-        value: props.analytics.metrics.viewsPerVisitor,
-        detail: 'Average pages viewed by each visitor.',
-        icon: FileStack,
-        currentValue: props.analytics.metrics.viewsPerVisitor,
-        previousValue: props.analytics.metricTrends.viewsPerVisitor.previous,
-        previousValueLabel: formatDecimal(
-            props.analytics.metricTrends.viewsPerVisitor.previous,
-        ),
-        change: props.analytics.metricTrends.viewsPerVisitor.change,
-        series: props.analytics.metricTrends.viewsPerVisitor.series,
-    },
-    {
-        label: 'Average visit time',
+        id: 'average-duration',
+        label: 'Avg. visit time',
         value: formatDuration(props.analytics.metrics.averageDuration),
-        detail: 'How long each visit lasted on average.',
+        detail: 'Average time spent during a visit.',
         icon: Timer,
+        accent: 'violet' as const,
+        actionHref: '',
+        actionLabel: '',
         currentValue: props.analytics.metrics.averageDuration,
         previousValue: props.analytics.metricTrends.averageDuration.previous,
         previousValueLabel: formatDuration(
@@ -287,106 +227,210 @@ const metricCards = computed<
         change: props.analytics.metricTrends.averageDuration.change,
         series: props.analytics.metricTrends.averageDuration.series,
     },
-]);
-
-const primaryMetrics = computed(() => [
-    {
-        ...metricCards.value.find((metric) => metric.label === 'Visitors')!,
-        id: 'visitors',
-    },
-    {
-        ...metricCards.value.find((metric) => metric.label === 'Visits')!,
-        id: 'visits',
-    },
-    {
-        ...metricCards.value.find((metric) => metric.label === 'Views')!,
-        id: 'views',
-    },
     {
         id: 'conversions',
         label: 'Conversions',
         value: formatNumber(props.analytics.metrics.conversions),
-        detail: 'Completed goals during this period.',
+        detail: 'Completed goals during the selected period.',
+        icon: Target,
+        accent: 'rose' as const,
+        actionHref: goalsIndex(props.project.id).url,
+        actionLabel: 'Set up goals',
         currentValue: props.analytics.metrics.conversions,
+        previousValue: props.analytics.metricTrends.conversions.previous,
+        previousValueLabel: formatNumber(
+            props.analytics.metricTrends.conversions.previous,
+        ),
+        change: props.analytics.metricTrends.conversions.change,
+        series: props.analytics.metricTrends.conversions.series,
     },
 ]);
 
-const secondaryMetrics = computed(() => [
+const actionableInsights = computed(
+    () =>
+        props.analytics.actionableInsights ?? props.analytics.whatChanged ?? [],
+);
+
+const sources = computed(
+    () => props.analytics.sources ?? props.analytics.referrers,
+);
+const topSource = computed(() => sources.value[0] ?? null);
+const topLandingPage = computed(
+    () => props.analytics.entryPages[0] ?? props.analytics.topPages[0] ?? null,
+);
+const topDevice = computed(() => props.analytics.devices[0] ?? null);
+const peakPoint = computed(() => {
+    return props.analytics.timeseries.reduce<
+        Analytics['timeseries'][number] | null
+    >((peak, point) => {
+        if (peak === null || point.visitors > peak.visitors) {
+            return point;
+        }
+
+        return peak;
+    }, null);
+});
+
+const topInsightFacts = computed(() => [
     {
-        ...metricCards.value.find((metric) => metric.label === 'Bounce rate')!,
-        id: 'bounce-rate',
+        id: 'source',
+        label: 'Top traffic source',
+        value: topSource.value?.label ?? 'No source yet',
+        detail: topSource.value
+            ? formatShare(topSource.value.value, totalOf(sources.value)) +
+              ' of visits'
+            : 'Waiting for visits',
+        icon: Target,
+        iconClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     },
     {
-        ...metricCards.value.find(
-            (metric) => metric.label === 'Pages per visitor',
-        )!,
-        id: 'pages-per-visitor',
+        id: 'landing-page',
+        label: 'Top landing page',
+        value: topLandingPage.value?.label ?? 'No landing page yet',
+        detail: topLandingPage.value
+            ? formatShare(
+                  topLandingPage.value.value,
+                  Math.max(1, props.analytics.metrics.sessions),
+              ) + ' of visits'
+            : 'Waiting for visits',
+        icon: FileInput,
+        iconClass: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
     },
     {
-        ...metricCards.value.find(
-            (metric) => metric.label === 'Average visit time',
-        )!,
-        id: 'average-visit-time',
+        id: 'device',
+        label: 'Top device',
+        value: topDevice.value?.label ?? 'No device yet',
+        detail: topDevice.value
+            ? formatShare(
+                  topDevice.value.value,
+                  totalOf(props.analytics.devices),
+              ) + ' of visits'
+            : 'Waiting for visits',
+        icon: Smartphone,
+        iconClass: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
     },
     {
-        id: 'conversion-rate',
-        label: 'Conversion rate',
-        value: formatPercentage(props.analytics.metrics.conversionRate),
-        detail: 'Share of visits that completed a goal.',
-        currentValue: props.analytics.metrics.conversionRate,
+        id: 'peak',
+        label: 'Peak period',
+        value: peakPoint.value?.label ?? 'Not enough data',
+        detail: peakPoint.value
+            ? formatNumber(peakPoint.value.visitors) + ' visitors'
+            : 'Waiting for visits',
+        icon: Clock3,
+        iconClass: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
     },
 ]);
 
-const insightCards = computed(() =>
-    props.analytics.insights.map((insight) => {
-        if (insight.type === 'high_single_page_rate') {
-            return {
-                ...insight,
-                title: `${formatPercentage(insight.value)} of visits stop after one page`,
-                description:
-                    'Review your top landing page and make its next action easier to find.',
-                icon: TriangleAlert,
-            };
+type DisplayInsight = {
+    id: string;
+    title: string;
+    description: string;
+    recommendation: string;
+    aiEnhanced: boolean;
+    icon: Component;
+    iconClass: string;
+};
+
+const snapshotInsights = computed<DisplayInsight[]>(() => [
+    {
+        id: 'baseline',
+        title:
+            formatNumber(props.analytics.metrics.visitors) +
+            ' visitors recorded',
+        description: props.analytics.comparison.available
+            ? 'Your current audience for this selected period.'
+            : 'Peekchimp is using this traffic to build your first reliable baseline.',
+        recommendation: props.analytics.comparison.available
+            ? 'Use this as the reference for the next matching period.'
+            : 'Keep tracking enabled until both matching periods contain traffic.',
+        aiEnhanced: false,
+        icon: TrendingUp,
+        iconClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    },
+    {
+        id: 'source',
+        title: topSource.value
+            ? topSource.value.label +
+              ' brought ' +
+              formatNumber(topSource.value.value) +
+              ' visits'
+            : 'Traffic sources are still being collected',
+        description: topSource.value
+            ? 'This is the largest traffic source in the selected period.'
+            : 'Source details will appear as new visits arrive.',
+        recommendation: topSource.value
+            ? 'Use campaign tags on shared links so direct traffic is easier to explain.'
+            : 'Keep tracking enabled while Peekchimp collects source data.',
+        aiEnhanced: false,
+        icon: House,
+        iconClass: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+    },
+    {
+        id: 'page',
+        title: topLandingPage.value
+            ? topLandingPage.value.label +
+              ' led with ' +
+              formatNumber(topLandingPage.value.value) +
+              ' visits'
+            : 'Landing pages are still being collected',
+        description: topLandingPage.value
+            ? 'This is where the most visits began in the selected period.'
+            : 'Landing-page details will appear as visits arrive.',
+        recommendation: topLandingPage.value
+            ? 'Make the next action on this page clear and easy to find.'
+            : 'Keep tracking enabled while Peekchimp collects page data.',
+        aiEnhanced: false,
+        icon: FileText,
+        iconClass: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+    },
+]);
+
+const displayedInsights = computed<DisplayInsight[]>(() => {
+    if (
+        !props.analytics.comparison.available ||
+        actionableInsights.value.length === 0
+    ) {
+        return snapshotInsights.value;
+    }
+
+    return actionableInsights.value.slice(0, 3).map((insight) => ({
+        id: insight.fingerprint,
+        title: insight.summary,
+        description: insight.explanation,
+        recommendation: insight.recommendation,
+        aiEnhanced: insight.ai_enhanced === true,
+        icon: ChartNoAxesCombined,
+        iconClass:
+            insight.percentage_change !== null && insight.percentage_change < 0
+                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    }));
+});
+
+const hasAiEnhancedInsights = computed(() =>
+    displayedInsights.value.some((insight) => insight.aiEnhanced),
+);
+const latestAiInsightGeneration = computed(() =>
+    actionableInsights.value.reduce<string | null>((latest, insight) => {
+        if (!insight.ai_generated_at) {
+            return latest;
         }
 
-        if (insight.type === 'unattributed_traffic') {
-            return {
-                ...insight,
-                title: `${formatPercentage(insight.value)} of views have no source`,
-                description:
-                    'Add UTM tags to links you share so campaigns are easier to compare.',
-                icon: Link2,
-            };
-        }
-
-        if (insight.type === 'healthy_engagement') {
-            return {
-                ...insight,
-                title: 'No obvious engagement issues',
-                description:
-                    'This range does not show either pattern Peekchimp can reliably flag.',
-                icon: CircleCheck,
-            };
-        }
-
-        return {
-            ...insight,
-            title: 'More visits will sharpen these tips',
-            description: `This range has ${formatNumber(insight.value)} of the 20 visits needed for reliable suggestions.`,
-            icon: CircleGauge,
-        };
-    }),
+        return latest === null || insight.ai_generated_at > latest
+            ? insight.ai_generated_at
+            : latest;
+    }, null),
 );
 
 const acquisitionTabs = computed(() => [
     {
         id: 'sources',
         label: 'Sources',
-        description: 'Search, other websites, and direct visits',
+        description: 'How visitors found your website',
         emptyMessage: 'No traffic sources in this period.',
-        items: props.analytics.sources ?? props.analytics.referrers,
+        items: sources.value,
         kind: 'source' as const,
-        total: totalOf(props.analytics.sources ?? props.analytics.referrers),
+        total: totalOf(sources.value),
     },
     {
         id: 'campaigns',
@@ -409,40 +453,13 @@ const acquisitionTabs = computed(() => [
     {
         id: 'ai',
         label: 'AI referrals',
-        description: 'Links and tags only; individual answers stay private',
+        description: 'Visits attributed to AI platforms',
         emptyMessage: 'No AI referral visits in this period.',
         items: props.analytics.aiReferrals.sources,
         kind: 'ai' as const,
         total: props.analytics.aiReferrals.totalVisits,
     },
 ]);
-
-const actionableInsights = computed(
-    () =>
-        props.analytics.actionableInsights ?? props.analytics.whatChanged ?? [],
-);
-const primaryActionableInsight = computed(
-    () => actionableInsights.value[0] ?? null,
-);
-const focusStatus = computed(() => insightCards.value[0] ?? null);
-const activeInsightAction = ref<string | null>(null);
-
-function runInsightAction(
-    insight: ActionableInsight,
-    action: { key: string; label: string; description: string },
-): void {
-    activeInsightAction.value = insight.id + ':' + action.key;
-    router.post(
-        insightActionStore(insight.id).url,
-        { action: action.key },
-        {
-            preserveScroll: true,
-            onFinish: () => {
-                activeInsightAction.value = null;
-            },
-        },
-    );
-}
 
 const audienceTabs = computed(() => [
     {
@@ -496,24 +513,12 @@ const audienceTabs = computed(() => [
     },
 ]);
 
-type AnalysisTab =
-    'insights' | 'pages' | 'acquisition' | 'audience' | 'outcomes';
-type PageTab = 'popular' | 'entry' | 'exit';
+const pageTabs = [
+    { id: 'top' as const, label: 'Top' },
+    { id: 'entry' as const, label: 'Entry' },
+    { id: 'exit' as const, label: 'Exit' },
+];
 
-const activeAnalysisTab = ref<AnalysisTab>('pages');
-const activePageTab = ref<PageTab>('popular');
-const analysisTabs: Array<{ id: AnalysisTab; label: string }> = [
-    { id: 'insights', label: 'Insights' },
-    { id: 'pages', label: 'Pages' },
-    { id: 'acquisition', label: 'Acquisition' },
-    { id: 'audience', label: 'Audience' },
-    { id: 'outcomes', label: 'Outcomes' },
-];
-const pageTabs: Array<{ id: PageTab; label: string }> = [
-    { id: 'popular', label: 'Popular' },
-    { id: 'entry', label: 'Entry' },
-    { id: 'exit', label: 'Exit' },
-];
 const activePageItems = computed(() => {
     if (activePageTab.value === 'entry') {
         return props.analytics.entryPages;
@@ -525,72 +530,77 @@ const activePageItems = computed(() => {
 
     return props.analytics.topPages;
 });
-const activePageTotal = computed(() =>
-    activePageTab.value === 'popular'
-        ? props.analytics.metrics.pageviews
-        : totalOf(activePageItems.value),
-);
-const activePageDescription = computed(() => {
-    if (activePageTab.value === 'entry') {
-        return 'Where visits begin';
+
+const activePageTotal = computed(() => {
+    if (activePageTab.value === 'top') {
+        return props.analytics.metrics.pageviews;
     }
 
-    if (activePageTab.value === 'exit') {
-        return 'Where visits end';
-    }
-
-    return 'Pages with the most views';
+    return totalOf(activePageItems.value);
 });
 
-function activateAdjacentTab(event: KeyboardEvent, offset: number): void {
-    const currentButton = event.currentTarget as HTMLButtonElement;
-    const tabList = currentButton.parentElement;
-    const buttons = Array.from(
-        tabList?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
-    );
-    const currentIndex = buttons.indexOf(currentButton);
+const visiblePageItems = computed(() =>
+    activePageItems.value.slice(0, showAllPages.value ? 12 : 5),
+);
 
-    if (currentIndex < 0 || buttons.length === 0) {
-        return;
+const periodSummary = computed(() => {
+    const from = formatDate(props.analytics.range.from);
+    const to = formatDate(props.analytics.range.to);
+
+    if (props.analytics.range.from === props.analytics.range.to) {
+        return 'Here is how your website performed on ' + from + '.';
     }
 
-    const nextIndex = (currentIndex + offset + buttons.length) % buttons.length;
-    buttons[nextIndex]?.focus();
-    buttons[nextIndex]?.click();
-}
+    return 'Here is how your website performed from ' + from + ' – ' + to + '.';
+});
 
 function formatNumber(value: number): string {
     return new Intl.NumberFormat().format(value);
 }
 
 function formatPercentage(value: number): string {
-    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)}%`;
-}
-
-function formatDecimal(value: number): string {
-    return new Intl.NumberFormat(undefined, {
-        maximumFractionDigits: 2,
-    }).format(value);
+    return (
+        new Intl.NumberFormat(undefined, {
+            maximumFractionDigits: 1,
+        }).format(value) + '%'
+    );
 }
 
 function formatDuration(seconds: number): string {
     if (seconds < 60) {
-        return `${seconds}s`;
+        return seconds + 's';
     }
 
-    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+}
+
+function formatDate(value: string): string {
+    return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+    }).format(new Date(value + 'T00:00:00Z'));
+}
+
+function formatShare(value: number, total: number): string {
+    if (total <= 0) {
+        return '0%';
+    }
+
+    return formatPercentage((value / total) * 100);
 }
 
 function totalOf(items: Breakdown[]): number {
     return items.reduce((total, item) => total + item.value, 0);
 }
 
-function percentageOf(value: number, total: number): number {
-    if (total <= 0) {
+function pageShare(value: number): number {
+    if (activePageTotal.value <= 0) {
         return 0;
     }
 
-    return Math.max(4, Math.min(100, (value / total) * 100));
+    return Math.round((value / activePageTotal.value) * 100);
 }
 
 function loadRange(range: string): void {
@@ -602,7 +612,7 @@ function loadRange(range: string): void {
         {
             preserveState: true,
             preserveScroll: true,
-            only: ['analytics', 'filters'],
+            only: ['analytics'],
             onFinish: () => {
                 isChangingRange.value = false;
             },
@@ -620,12 +630,125 @@ function refresh(): void {
     });
 }
 
+function generateAiInsights(): void {
+    stopAiInsightPolling();
+    aiInsightGenerationBaseline = latestAiInsightGeneration.value;
+    aiInsightRunBaseline = props.aiInsightRun?.updatedAt ?? null;
+    isGeneratingAi.value = true;
+    let receivedQueueConfirmation = false;
+    router.post(
+        GenerateDashboardAiInsightsController().url,
+        { range: selectedRange.value },
+        {
+            preserveScroll: true,
+            onFlash: (flash) => {
+                const generation = flash.aiInsightGeneration as
+                    | { queued?: boolean; message?: string }
+                    | undefined;
+
+                if (generation === undefined) {
+                    return;
+                }
+
+                receivedQueueConfirmation = true;
+
+                if (generation.queued === true) {
+                    pollForAiInsights();
+
+                    return;
+                }
+
+                stopAiInsightPolling();
+            },
+            onError: () => {
+                stopAiInsightPolling();
+                toast.error('Peekchimp could not queue AI insight generation.');
+            },
+            onFinish: () => {
+                if (! receivedQueueConfirmation && isGeneratingAi.value) {
+                    stopAiInsightPolling();
+                    toast.error(
+                        'Peekchimp did not confirm that the AI job was queued.',
+                    );
+                }
+            },
+        },
+    );
+}
+
+function pollForAiInsights(): void {
+    aiInsightRefreshTimer = window.setTimeout(() => {
+        router.reload({
+            only: ['analytics', 'aiInsightRun'],
+            onFinish: () => {
+                aiInsightRefreshAttempts += 1;
+                const latestRun = props.aiInsightRun ?? null;
+                const hasNewRunState =
+                    latestRun !== null &&
+                    latestRun.updatedAt !== aiInsightRunBaseline;
+
+                if (
+                    hasNewRunState &&
+                    latestRun.status === 'completed' &&
+                    latestAiInsightGeneration.value !== null &&
+                    latestAiInsightGeneration.value !==
+                        aiInsightGenerationBaseline
+                ) {
+                    stopAiInsightPolling();
+                    toast.success('AI recommendations updated.');
+
+                    return;
+                }
+
+                if (
+                    hasNewRunState &&
+                    (latestRun.status === 'failed' ||
+                        latestRun.status === 'skipped')
+                ) {
+                    const message =
+                        latestRun.error ||
+                        'AI finished without producing a useful recommendation.';
+                    stopAiInsightPolling();
+                    toast.error(message);
+
+                    return;
+                }
+
+                if (aiInsightRefreshAttempts >= 18) {
+                    stopAiInsightPolling();
+                    toast.error(
+                        'No AI job completed. Confirm the queue worker is running, then try again.',
+                    );
+
+                    return;
+                }
+
+                pollForAiInsights();
+            },
+        });
+    }, 2500);
+}
+
+function stopAiInsightPolling(): void {
+    if (aiInsightRefreshTimer !== undefined) {
+        window.clearTimeout(aiInsightRefreshTimer);
+        aiInsightRefreshTimer = undefined;
+    }
+
+    aiInsightRefreshAttempts = 0;
+    isGeneratingAi.value = false;
+}
+
 watch(
     () => props.analytics.range.key,
     (rangeKey) => {
         selectedRange.value = rangeKey;
     },
 );
+
+watch(activePageTab, () => {
+    showAllPages.value = false;
+});
 
 onMounted(() => {
     refreshTimer = window.setInterval(
@@ -638,6 +761,8 @@ onBeforeUnmount(() => {
     if (refreshTimer !== undefined) {
         window.clearInterval(refreshTimer);
     }
+
+    stopAiInsightPolling();
 });
 </script>
 
@@ -645,20 +770,18 @@ onBeforeUnmount(() => {
     <TooltipProvider :delay-duration="100">
         <Head title="Dashboard" />
 
-        <div
-            class="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pt-6 pb-24 sm:gap-6 sm:px-6 sm:pt-8"
+        <main
+            class="mx-auto flex w-full max-w-[1500px] flex-col gap-8 px-4 pt-7 pb-16 sm:px-6 lg:px-8"
         >
             <header
-                class="flex flex-col justify-between gap-5 sm:flex-row sm:items-center"
+                class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"
             >
                 <div class="min-w-0">
-                    <p
-                        class="mb-2 text-xs tracking-[0.12em] text-muted-foreground uppercase"
-                    >
-                        Website overview
+                    <p class="text-sm font-medium text-muted-foreground">
+                        Website Overview
                     </p>
                     <h1
-                        class="truncate text-3xl font-medium tracking-[-0.045em] sm:text-4xl"
+                        class="mt-1 truncate text-4xl font-semibold tracking-[-0.05em] sm:text-5xl"
                     >
                         {{ project.name }}
                     </h1>
@@ -666,26 +789,30 @@ onBeforeUnmount(() => {
                         class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground"
                     >
                         <span class="truncate">{{ project.domains[0] }}</span>
-                        <span aria-hidden="true">·</span>
-                        <span class="shrink-0">{{ project.timezone }}</span>
-                        <span aria-hidden="true">·</span>
+                        <span aria-hidden="true">•</span>
+                        <span>{{ project.timezone }}</span>
+                        <span aria-hidden="true">•</span>
                         <span class="inline-flex items-center gap-1.5">
                             <span
-                                class="size-1.5 rounded-full bg-success"
+                                class="size-1.5 rounded-full bg-emerald-500"
                                 aria-hidden="true"
                             />
                             Tracking is active
                         </span>
                     </p>
+                    <p class="mt-3 text-sm text-muted-foreground">
+                        {{ periodSummary }}
+                    </p>
                 </div>
 
-                <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <div class="flex flex-wrap items-center gap-2">
                     <span
-                        class="inline-flex h-9 items-center gap-2 rounded-full bg-secondary px-3 text-xs text-muted-foreground"
+                        class="inline-flex h-9 items-center gap-2 rounded-full bg-emerald-500/10 px-3 text-xs text-muted-foreground"
                     >
-                        <span class="tracking-status" aria-hidden="true">
-                            <span />
-                        </span>
+                        <span
+                            class="size-1.5 rounded-full bg-emerald-500"
+                            aria-hidden="true"
+                        />
                         <strong
                             class="font-medium text-foreground tabular-nums"
                         >
@@ -693,697 +820,374 @@ onBeforeUnmount(() => {
                         </strong>
                         active now
                     </span>
-                    <select
-                        v-model="selectedRange"
-                        class="select-with-chevron h-9 min-w-0 flex-1 cursor-pointer rounded-md border border-input bg-card text-sm font-medium transition-colors outline-none hover:bg-accent/50 focus:border-ring focus:ring-2 focus:ring-ring/30 sm:flex-none"
-                        aria-label="Date range"
-                        :disabled="isChangingRange"
-                        @change="loadRange(selectedRange)"
+                    <label class="relative">
+                        <CalendarDays
+                            class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                        <select
+                            v-model="selectedRange"
+                            class="select-with-chevron h-9 cursor-pointer rounded-xl border border-input bg-card pr-10 pl-9 text-xs font-medium transition-colors outline-none hover:bg-accent/50 focus:border-ring focus:ring-2 focus:ring-ring/30"
+                            aria-label="Date range"
+                            :disabled="isChangingRange"
+                            @change="loadRange(selectedRange)"
+                        >
+                            <option value="today">Today</option>
+                            <option value="yesterday">Yesterday</option>
+                            <option value="7d">Last 7 days</option>
+                            <option value="30d">Last 30 days</option>
+                            <option value="month">This month</option>
+                        </select>
+                    </label>
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        class="rounded-xl"
+                        :disabled="isManualRefreshing"
+                        aria-label="Refresh dashboard"
+                        @click="refresh"
                     >
-                        <option value="today">Today</option>
-                        <option value="yesterday">Yesterday</option>
-                        <option value="7d">Last 7 days</option>
-                        <option value="30d">Last 30 days</option>
-                        <option value="month">This month</option>
-                    </select>
-                    <Tooltip>
-                        <TooltipTrigger as-child>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                :disabled="isManualRefreshing"
-                                aria-label="Refresh dashboard"
-                                @click="refresh"
-                            >
-                                <RefreshCw
-                                    :class="[
-                                        'size-4',
-                                        isManualRefreshing && 'animate-spin',
-                                    ]"
-                                />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                            Refresh now. Data also updates every 30 seconds.
-                        </TooltipContent>
-                    </Tooltip>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger :as-child="true">
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                aria-label="More dashboard options"
-                            >
-                                <MoreHorizontal class="size-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" class="w-44">
-                            <DropdownMenuItem :as-child="true">
-                                <Link :href="aiTrafficRoute(project.id).url">
-                                    <Waypoints class="size-4" />
-                                    AI traffic
-                                </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem :as-child="true">
-                                <Link :href="aiVisibilityShow(project.id).url">
-                                    <ScanEye class="size-4" />
-                                    AI visibility
-                                </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem :as-child="true">
-                                <Link :href="editWebsiteSettings(project.id)">
-                                    <Settings class="size-4" />
-                                    Website settings
-                                </Link>
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                        <RefreshCw
+                            :class="[
+                                'size-4',
+                                isManualRefreshing && 'animate-spin',
+                            ]"
+                        />
+                    </Button>
+                    <Button as-child variant="outline" class="rounded-xl">
+                        <Link :href="editWebsiteSettings(project.id)">
+                            <Share2 class="size-4" />
+                            Share
+                        </Link>
+                    </Button>
                 </div>
             </header>
 
-            <Card
-                class="gap-0 overflow-hidden p-1"
-                aria-labelledby="focus-title"
+            <section
+                class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+                aria-label="Website performance metrics"
             >
-                <div class="rounded-xl bg-card px-4 py-4 sm:px-5">
-                    <div class="flex items-start gap-3">
-                        <span
-                            class="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary"
-                            :class="{
-                                'text-destructive':
-                                    primaryActionableInsight?.severity ===
-                                    'critical',
-                                'text-warning':
-                                    primaryActionableInsight?.severity ===
-                                    'warning',
-                                'text-primary':
-                                    primaryActionableInsight?.severity ===
-                                    'info',
-                                'text-success':
-                                    !primaryActionableInsight &&
-                                    focusStatus?.tone === 'positive',
-                                'text-muted-foreground':
-                                    !primaryActionableInsight &&
-                                    focusStatus?.tone === 'neutral',
-                            }"
-                            aria-hidden="true"
-                        >
-                            <Lightbulb
-                                v-if="primaryActionableInsight"
-                                class="size-4"
-                            />
-                            <component
-                                :is="focusStatus.icon"
-                                v-else-if="focusStatus"
-                                class="size-4"
-                            />
-                            <CircleGauge v-else class="size-4" />
-                        </span>
-                        <div class="min-w-0 flex-1">
-                            <p
-                                class="text-[11px] font-medium tracking-[0.1em] text-muted-foreground uppercase"
+                <MetricTrendCard
+                    v-for="metric in metricCards"
+                    :key="metric.id"
+                    :animation-key="analytics.range.key + '-' + metric.id"
+                    :accent="metric.accent"
+                    :label="metric.label"
+                    :value="metric.value"
+                    :detail="metric.detail"
+                    :icon="metric.icon"
+                    :current-value="metric.currentValue"
+                    :previous-value="metric.previousValue"
+                    :previous-value-label="metric.previousValueLabel"
+                    :change="metric.change"
+                    :series="metric.series"
+                    :comparison-label="comparisonLabel"
+                    :comparison-available="analytics.comparison.available"
+                    :inverse="metric.inverse"
+                    :action-href="metric.actionHref"
+                    :action-label="metric.actionLabel"
+                />
+            </section>
+
+            <section
+                class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(17rem,1fr)]"
+                aria-label="Analytics insights"
+            >
+                <Card
+                    class="overflow-hidden rounded-2xl !border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.07] via-card to-card p-5 shadow-none sm:p-6"
+                >
+                    <div
+                        class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                        <div class="flex items-start gap-3">
+                            <span
+                                class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                             >
-                                Focus
-                            </p>
-                            <template v-if="primaryActionableInsight">
-                                <h2
-                                    id="focus-title"
-                                    class="mt-1 text-base font-medium tracking-[-0.02em]"
-                                >
-                                    {{ primaryActionableInsight.summary }}
-                                </h2>
-                                <p
-                                    class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground"
-                                >
-                                    {{ primaryActionableInsight.explanation }}
-                                </p>
-                                <p class="mt-2 text-sm">
-                                    <span class="text-muted-foreground"
-                                        >Next:</span
+                                <Sparkles class="size-5" />
+                            </span>
+                            <div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h2
+                                        class="text-xl font-semibold tracking-[-0.025em]"
                                     >
-                                    {{
-                                        primaryActionableInsight.recommendation
-                                    }}
-                                </p>
-                                <div
-                                    class="mt-3 flex flex-wrap items-center gap-2"
-                                >
-                                    <Button
-                                        v-for="action in primaryActionableInsight.actions"
-                                        :key="action.key"
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        class="h-8 rounded-full px-3 text-xs"
-                                        :disabled="
-                                            activeInsightAction ===
-                                            primaryActionableInsight.id +
-                                                ':' +
-                                                action.key
-                                        "
-                                        :title="action.description"
-                                        @click="
-                                            runInsightAction(
-                                                primaryActionableInsight,
-                                                action,
-                                            )
-                                        "
+                                        Analytics insights
+                                    </h2>
+                                    <span
+                                        :class="[
+                                            'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                                            hasAiEnhancedInsights
+                                                ? 'border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+                                                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                                        ]"
                                     >
                                         {{
-                                            activeInsightAction ===
-                                            primaryActionableInsight.id +
-                                                ':' +
-                                                action.key
-                                                ? 'Working…'
-                                                : action.label
+                                            hasAiEnhancedInsights
+                                                ? 'AI-enhanced'
+                                                : analytics.comparison.available
+                                                  ? 'Data-backed'
+                                                  : 'Building baseline'
                                         }}
-                                    </Button>
-                                    <Button
-                                        v-if="actionableInsights.length > 1"
-                                        type="button"
-                                        size="sm"
-                                        variant="ghost"
-                                        class="h-8 rounded-full px-3 text-xs"
-                                        @click="activeAnalysisTab = 'insights'"
-                                    >
-                                        View all changes
-                                    </Button>
+                                    </span>
                                 </div>
-                            </template>
-                            <template v-else-if="focusStatus">
-                                <h2
-                                    id="focus-title"
-                                    class="mt-1 text-base font-medium tracking-[-0.02em]"
-                                >
-                                    {{ focusStatus.title }}
-                                </h2>
-                                <p
-                                    class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground"
-                                >
-                                    {{ focusStatus.description }}
-                                </p>
-                            </template>
-                            <template v-else>
-                                <h2 id="focus-title" class="mt-1 font-medium">
-                                    Collecting analytics
-                                </h2>
                                 <p class="mt-1 text-sm text-muted-foreground">
-                                    Peekchimp will highlight meaningful changes
-                                    after more visits arrive.
+                                    {{
+                                        hasAiEnhancedInsights
+                                            ? 'AI-enhanced recommendations based on aggregate analytics changes.'
+                                            : analytics.comparison.available
+                                              ? 'Data-backed changes and recommendations from your analytics.'
+                                            : 'Useful current-period facts while Peekchimp builds a reliable comparison.'
+                                    }}
                                 </p>
-                            </template>
-                        </div>
-                    </div>
-                </div>
-            </Card>
-
-            <DashboardOverview
-                :primary-metrics="primaryMetrics"
-                :secondary-metrics="secondaryMetrics"
-                :range="analytics.range"
-                :chart-metrics="analytics.metrics"
-                :timeseries="analytics.timeseries"
-            />
-
-            <Card class="gap-0 overflow-hidden p-1">
-                <div class="rounded-xl bg-background/70">
-                    <div
-                        class="flex flex-col gap-4 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
-                    >
-                        <div>
-                            <h2 class="font-medium">Explore</h2>
-                            <p class="mt-1 text-xs text-muted-foreground">
-                                Open one area at a time when you need more
-                                detail.
-                            </p>
+                            </div>
                         </div>
                         <div
-                            class="max-w-full overflow-x-auto pb-1"
-                            role="tablist"
-                            aria-label="Dashboard analysis"
+                            v-if="page.props.auth.user?.is_admin"
+                            class="flex shrink-0 items-center gap-2"
                         >
-                            <div
-                                class="inline-flex min-w-max items-center gap-1 rounded-full border border-border bg-card p-1"
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="rounded-xl bg-card"
+                                :disabled="isGeneratingAi"
+                                @click="generateAiInsights"
                             >
-                                <button
-                                    v-for="tab in analysisTabs"
-                                    :id="'analysis-' + tab.id + '-tab'"
-                                    :key="tab.id"
-                                    type="button"
-                                    role="tab"
-                                    class="h-8 cursor-pointer rounded-full px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                                    :class="
-                                        activeAnalysisTab === tab.id
-                                            ? 'bg-secondary text-foreground'
-                                            : 'text-muted-foreground hover:text-foreground'
-                                    "
-                                    :aria-selected="
-                                        activeAnalysisTab === tab.id
-                                    "
-                                    :aria-controls="
-                                        'analysis-' + tab.id + '-panel'
-                                    "
-                                    :tabindex="
-                                        activeAnalysisTab === tab.id ? 0 : -1
-                                    "
-                                    @click="activeAnalysisTab = tab.id"
-                                    @keydown.left.prevent="
-                                        activateAdjacentTab($event, -1)
-                                    "
-                                    @keydown.right.prevent="
-                                        activateAdjacentTab($event, 1)
-                                    "
-                                >
-                                    {{ tab.label }}
-                                </button>
-                            </div>
+                                <Bot class="size-3.5" />
+                                {{
+                                    isGeneratingAi
+                                        ? 'Generating…'
+                                        : 'Generate AI insight'
+                                }}
+                            </Button>
+                            <Button
+                                as-child
+                                variant="outline"
+                                size="sm"
+                                class="rounded-xl bg-card"
+                            >
+                                <Link :href="editAi().url">AI settings</Link>
+                            </Button>
                         </div>
                     </div>
 
-                    <Transition name="analysis-panel" mode="out-in">
-                        <section
-                            v-if="activeAnalysisTab === 'insights'"
-                            id="analysis-insights-panel"
-                            key="insights"
-                            class="analysis-panel px-4 py-5 sm:px-5"
-                            role="tabpanel"
-                            aria-labelledby="analysis-insights-tab"
+                    <div class="mt-6 grid gap-3 md:grid-cols-3">
+                        <article
+                            v-for="insight in displayedInsights"
+                            :key="insight.id"
+                            class="flex min-h-60 flex-col rounded-2xl border border-border/80 bg-card p-4 shadow-xs"
                         >
-                            <div class="grid gap-3 lg:grid-cols-2">
-                                <div
-                                    v-for="insight in actionableInsights"
-                                    :key="insight.fingerprint"
-                                    class="rounded-xl border border-border/80 bg-card/55 p-4"
+                            <div class="flex items-start gap-3">
+                                <span
+                                    :class="[
+                                        'flex size-9 shrink-0 items-center justify-center rounded-full',
+                                        insight.iconClass,
+                                    ]"
+                                    aria-hidden="true"
                                 >
-                                    <div class="flex items-start gap-3">
-                                        <Lightbulb
-                                            class="mt-0.5 size-4 shrink-0 text-warning"
-                                            aria-hidden="true"
-                                        />
-                                        <div class="min-w-0">
-                                            <p class="text-sm font-medium">
-                                                {{ insight.summary }}
-                                            </p>
-                                            <p
-                                                class="mt-1 text-xs leading-5 text-muted-foreground"
-                                            >
-                                                {{ insight.explanation }}
-                                            </p>
-                                            <p class="mt-2 text-xs">
-                                                {{ insight.recommendation }}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div
-                                    v-for="insight in insightCards"
-                                    :key="insight.type"
-                                    class="rounded-xl border border-border/80 bg-card/55 p-4"
-                                >
-                                    <div class="flex items-start gap-3">
-                                        <component
-                                            :is="insight.icon"
-                                            class="mt-0.5 size-4 shrink-0"
-                                            :class="{
-                                                'text-warning':
-                                                    insight.tone ===
-                                                    'attention',
-                                                'text-success':
-                                                    insight.tone === 'positive',
-                                                'text-muted-foreground':
-                                                    insight.tone === 'neutral',
-                                            }"
-                                            aria-hidden="true"
-                                        />
-                                        <div>
-                                            <p class="text-sm font-medium">
-                                                {{ insight.title }}
-                                            </p>
-                                            <p
-                                                class="mt-1 text-xs leading-5 text-muted-foreground"
-                                            >
-                                                {{ insight.description }}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <p
-                                v-if="
-                                    actionableInsights.length === 0 &&
-                                    insightCards.length === 0
-                                "
-                                class="py-12 text-center text-sm text-muted-foreground"
-                                role="status"
-                            >
-                                No insights are available for this period.
-                            </p>
-                        </section>
-
-                        <section
-                            v-else-if="activeAnalysisTab === 'pages'"
-                            id="analysis-pages-panel"
-                            key="pages"
-                            class="analysis-panel px-4 py-5 sm:px-5"
-                            role="tabpanel"
-                            aria-labelledby="analysis-pages-tab"
-                        >
-                            <div
-                                class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                                <div>
-                                    <h3 class="text-sm font-medium">
-                                        Website pages
+                                    <component
+                                        :is="insight.icon"
+                                        class="size-4.5"
+                                    />
+                                </span>
+                                <div class="min-w-0">
+                                    <h3 class="text-sm leading-5 font-semibold">
+                                        {{ insight.title }}
                                     </h3>
                                     <p
-                                        class="mt-1 text-xs text-muted-foreground"
+                                        class="mt-2 text-xs leading-5 text-muted-foreground"
                                     >
-                                        {{ activePageDescription }}
+                                        {{ insight.description }}
                                     </p>
                                 </div>
-                                <div
-                                    class="inline-flex w-fit items-center gap-1 rounded-full bg-secondary p-1"
-                                    role="tablist"
-                                    aria-label="Page views"
-                                >
-                                    <button
-                                        v-for="tab in pageTabs"
-                                        :id="'pages-' + tab.id + '-tab'"
-                                        :key="tab.id"
-                                        type="button"
-                                        role="tab"
-                                        class="h-7 rounded-full px-3 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                                        :class="
-                                            activePageTab === tab.id
-                                                ? 'bg-card text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]'
-                                                : 'text-muted-foreground hover:text-foreground'
-                                        "
-                                        :aria-selected="
-                                            activePageTab === tab.id
-                                        "
-                                        @click="activePageTab = tab.id"
-                                    >
-                                        {{ tab.label }}
-                                    </button>
-                                </div>
                             </div>
-                            <div
-                                class="min-h-56 overflow-hidden rounded-xl border border-border/80 bg-card/55 py-2"
-                            >
-                                <div
-                                    v-for="(
-                                        page, index
-                                    ) in activePageItems.slice(0, 8)"
-                                    :key="page.label"
-                                    class="group/page relative flex min-h-10 items-center gap-3 overflow-hidden px-3 py-2 text-sm transition-colors hover:bg-accent/70"
-                                >
-                                    <span
-                                        class="absolute inset-y-0 left-0 bg-foreground/[0.035]"
-                                        :style="{
-                                            width:
-                                                percentageOf(
-                                                    page.value,
-                                                    activePageTotal,
-                                                ) + '%',
-                                        }"
-                                        aria-hidden="true"
-                                    />
-                                    <span
-                                        class="relative w-5 shrink-0 font-mono text-[10px] text-muted-foreground"
-                                    >
-                                        {{ String(index + 1).padStart(2, '0') }}
-                                    </span>
-                                    <FileText
-                                        class="relative size-4 shrink-0 text-muted-foreground"
-                                        aria-hidden="true"
-                                    />
-                                    <span
-                                        class="relative min-w-0 flex-1 truncate font-mono text-xs"
-                                    >
-                                        {{ page.label }}
-                                    </span>
-                                    <span
-                                        class="relative shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
-                                    >
-                                        {{ formatNumber(page.value) }}
-                                    </span>
-                                </div>
+                            <div class="mt-auto rounded-xl bg-muted/70 p-3.5">
                                 <p
-                                    v-if="activePageItems.length === 0"
-                                    class="py-20 text-center text-sm text-muted-foreground"
-                                    role="status"
+                                    :class="[
+                                        'flex items-center gap-1.5 text-[11px] font-semibold',
+                                        insight.aiEnhanced
+                                            ? 'text-violet-700 dark:text-violet-300'
+                                            : 'text-emerald-700 dark:text-emerald-300',
+                                    ]"
                                 >
-                                    No page activity in this period.
+                                    <Bot
+                                        v-if="insight.aiEnhanced"
+                                        class="size-3.5"
+                                    />
+                                    <Lightbulb v-else class="size-3.5" />
+                                    {{
+                                        insight.aiEnhanced
+                                            ? 'AI-enhanced recommendation'
+                                            : 'Recommendation'
+                                    }}
+                                </p>
+                                <p class="mt-1.5 text-xs leading-5">
+                                    {{ insight.recommendation }}
                                 </p>
                             </div>
-                        </section>
+                        </article>
+                    </div>
+                </Card>
 
-                        <section
-                            v-else-if="activeAnalysisTab === 'acquisition'"
-                            id="analysis-acquisition-panel"
-                            key="acquisition"
-                            class="analysis-panel"
-                            role="tabpanel"
-                            aria-labelledby="analysis-acquisition-tab"
+                <Card class="rounded-2xl p-5 shadow-xs sm:p-6">
+                    <div class="flex items-center gap-2">
+                        <h2 class="font-semibold">Top insights</h2>
+                        <Info
+                            class="size-3.5 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                    </div>
+                    <div class="mt-5 flex flex-col gap-5">
+                        <div
+                            v-for="fact in topInsightFacts"
+                            :key="fact.id"
+                            class="flex items-start gap-3"
                         >
-                            <DashboardBreakdownCard
-                                embedded
-                                id="acquisition"
-                                title="Acquisition"
-                                description="How people reached your website"
-                                :icon="Waypoints"
-                                :tabs="acquisitionTabs"
-                            />
-                        </section>
+                            <span
+                                :class="[
+                                    'flex size-9 shrink-0 items-center justify-center rounded-full',
+                                    fact.iconClass,
+                                ]"
+                                aria-hidden="true"
+                            >
+                                <component :is="fact.icon" class="size-4.5" />
+                            </span>
+                            <div class="min-w-0">
+                                <p class="text-xs text-muted-foreground">
+                                    {{ fact.label }}
+                                </p>
+                                <p
+                                    class="mt-0.5 truncate text-sm font-semibold"
+                                >
+                                    {{ fact.value }}
+                                </p>
+                                <p class="mt-0.5 text-xs text-muted-foreground">
+                                    {{ fact.detail }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            </section>
 
-                        <section
-                            v-else-if="activeAnalysisTab === 'audience'"
-                            id="analysis-audience-panel"
-                            key="audience"
-                            class="analysis-panel"
-                            role="tabpanel"
-                            aria-labelledby="analysis-audience-tab"
-                        >
-                            <DashboardBreakdownCard
-                                embedded
-                                id="audience"
-                                title="Audience"
-                                description="Anonymous details about your visitors"
-                                :icon="UsersRound"
-                                :tabs="audienceTabs"
-                            />
-                        </section>
+            <section
+                class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(17rem,1fr)]"
+                aria-label="Traffic and pages"
+            >
+                <DashboardTrafficChart
+                    :range="analytics.range"
+                    :metrics="analytics.metrics"
+                    :timeseries="analytics.timeseries"
+                />
 
-                        <section
-                            v-else
-                            id="analysis-outcomes-panel"
-                            key="outcomes"
-                            class="analysis-panel px-4 py-5 sm:px-5"
-                            role="tabpanel"
-                            aria-labelledby="analysis-outcomes-tab"
+                <Card
+                    class="overflow-hidden rounded-2xl border-border/80 p-0 shadow-xs"
+                >
+                    <div class="flex items-center justify-between p-5 pb-3">
+                        <h2 class="font-semibold">Top pages</h2>
+                        <button
+                            v-if="activePageItems.length > 5"
+                            type="button"
+                            class="text-xs font-medium text-primary hover:underline"
+                            @click="showAllPages = !showAllPages"
                         >
-                            <div class="grid gap-5 lg:grid-cols-2">
-                                <div>
+                            {{ showAllPages ? 'Show less' : 'View all' }}
+                        </button>
+                    </div>
+                    <div
+                        class="mx-5 grid grid-cols-3 rounded-xl bg-muted/60 p-1"
+                        role="tablist"
+                        aria-label="Page type"
+                    >
+                        <button
+                            v-for="tab in pageTabs"
+                            :key="tab.id"
+                            type="button"
+                            role="tab"
+                            class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+                            :class="
+                                activePageTab === tab.id
+                                    ? 'bg-card text-primary shadow-xs'
+                                    : 'text-muted-foreground hover:text-foreground'
+                            "
+                            :aria-selected="activePageTab === tab.id"
+                            @click="activePageTab = tab.id"
+                        >
+                            {{ tab.label }}
+                        </button>
+                    </div>
+                    <div class="mt-3 border-t border-border/70 px-5 py-3">
+                        <div
+                            v-for="(page, index) in visiblePageItems"
+                            :key="page.label"
+                            class="grid grid-cols-[1.5rem_minmax(0,1fr)_2.5rem] items-center gap-2 py-2.5"
+                        >
+                            <span
+                                class="font-mono text-[10px] text-muted-foreground"
+                            >
+                                {{ String(index + 1).padStart(2, '0') }}
+                            </span>
+                            <div class="min-w-0">
+                                <p class="truncate font-mono text-xs">
+                                    {{ page.label }}
+                                </p>
+                                <div
+                                    class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                                >
                                     <div
-                                        class="flex items-start justify-between gap-4"
-                                    >
-                                        <div>
-                                            <h3 class="text-sm font-medium">
-                                                Important actions
-                                            </h3>
-                                            <p
-                                                class="mt-1 text-xs text-muted-foreground"
-                                            >
-                                                Clicks against matching page
-                                                views.
-                                            </p>
-                                        </div>
-                                        <Link
-                                            :href="actionsIndex(project.id).url"
-                                            class="text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
-                                        >
-                                            Manage
-                                        </Link>
-                                    </div>
-                                    <div
-                                        class="mt-4 overflow-hidden rounded-xl border border-border/80 bg-card/55 py-2"
-                                    >
-                                        <div
-                                            v-for="action in analytics.importantActions"
-                                            :key="action.id"
-                                            class="flex items-center justify-between gap-4 px-3 py-2 text-sm"
-                                        >
-                                            <span class="min-w-0 truncate">
-                                                {{ action.name }}
-                                            </span>
-                                            <span
-                                                class="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums"
-                                            >
-                                                {{
-                                                    formatNumber(action.clicks)
-                                                }}
-                                                clicks ·
-                                                {{
-                                                    formatPercentage(action.ctr)
-                                                }}
-                                            </span>
-                                        </div>
-                                        <p
-                                            v-if="
-                                                analytics.importantActions
-                                                    .length === 0
-                                            "
-                                            class="px-4 py-12 text-center text-sm text-muted-foreground"
-                                        >
-                                            No important actions configured.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div
-                                        class="flex items-start justify-between gap-4"
-                                    >
-                                        <div>
-                                            <h3 class="text-sm font-medium">
-                                                Goals
-                                            </h3>
-                                            <p
-                                                class="mt-1 text-xs text-muted-foreground"
-                                            >
-                                                Session outcomes worth
-                                                measuring.
-                                            </p>
-                                        </div>
-                                        <div
-                                            class="flex gap-3 text-xs text-muted-foreground"
-                                        >
-                                            <Link
-                                                :href="
-                                                    goalsIndex(project.id).url
-                                                "
-                                                class="underline decoration-border underline-offset-4 hover:text-foreground"
-                                            >
-                                                Manage
-                                            </Link>
-                                            <Link
-                                                :href="
-                                                    funnelsIndex(project.id).url
-                                                "
-                                                class="underline decoration-border underline-offset-4 hover:text-foreground"
-                                            >
-                                                Funnels
-                                            </Link>
-                                        </div>
-                                    </div>
-                                    <div
-                                        class="mt-4 overflow-hidden rounded-xl border border-border/80 bg-card/55 py-2"
-                                    >
-                                        <div
-                                            v-for="goal in analytics.goals"
-                                            :key="goal.id"
-                                            class="flex items-center justify-between gap-4 px-3 py-2 text-sm"
-                                        >
-                                            <span class="min-w-0 truncate">
-                                                {{ goal.name }}
-                                            </span>
-                                            <span
-                                                class="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums"
-                                            >
-                                                {{
-                                                    formatNumber(
-                                                        goal.conversions,
-                                                    )
-                                                }}
-                                                ·
-                                                {{
-                                                    formatPercentage(
-                                                        goal.conversionRate,
-                                                    )
-                                                }}
-                                            </span>
-                                        </div>
-                                        <p
-                                            v-if="analytics.goals.length === 0"
-                                            class="px-4 py-12 text-center text-sm text-muted-foreground"
-                                        >
-                                            No goals configured.
-                                        </p>
-                                    </div>
+                                        class="h-full rounded-full bg-emerald-500"
+                                        :style="{
+                                            width:
+                                                Math.max(
+                                                    3,
+                                                    pageShare(page.value),
+                                                ) + '%',
+                                        }"
+                                    />
                                 </div>
                             </div>
-                        </section>
-                    </Transition>
-                </div>
-            </Card>
-        </div>
+                            <span
+                                class="text-right font-mono text-[10px] text-muted-foreground tabular-nums"
+                            >
+                                {{ pageShare(page.value) }}%
+                            </span>
+                        </div>
+                        <div
+                            v-if="visiblePageItems.length === 0"
+                            class="flex min-h-48 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
+                            role="status"
+                        >
+                            <FileText class="size-5" />
+                            No page data in this period.
+                        </div>
+                    </div>
+                </Card>
+            </section>
+
+            <section
+                class="grid gap-4 lg:grid-cols-2"
+                aria-label="Acquisition and audience"
+            >
+                <DashboardBreakdownCard
+                    id="acquisition"
+                    title="Acquisition"
+                    description="How visitors find your website"
+                    :icon="Waypoints"
+                    :tabs="acquisitionTabs"
+                />
+                <DashboardBreakdownCard
+                    id="audience"
+                    title="Audience"
+                    description="Who visits and what they use"
+                    :icon="UsersRound"
+                    :tabs="audienceTabs"
+                />
+            </section>
+
+            <div
+                class="mx-auto inline-flex items-center gap-2 rounded-full border border-border/80 bg-card px-4 py-2 text-xs text-muted-foreground"
+            >
+                <CircleGauge class="size-4" />
+                All times are in {{ project.timezone }}
+            </div>
+        </main>
     </TooltipProvider>
 </template>
-
-<style scoped>
-.tracking-status {
-    position: relative;
-    display: inline-flex;
-    width: 0.5rem;
-    height: 0.5rem;
-}
-
-.tracking-status::before,
-.tracking-status span {
-    position: absolute;
-    inset: 0;
-    border-radius: 9999px;
-    background: var(--success);
-}
-
-.tracking-status::before {
-    content: '';
-    animation: tracking-pulse 1.6s ease-in-out infinite;
-}
-
-.analysis-panel-enter-active {
-    transition:
-        opacity 160ms ease-out,
-        transform 160ms cubic-bezier(0.2, 0, 0, 1),
-        filter 160ms ease-out;
-}
-
-.analysis-panel-leave-active {
-    transition:
-        opacity 100ms ease-in,
-        transform 100ms ease-in;
-}
-
-.analysis-panel-enter-from {
-    opacity: 0;
-    filter: blur(3px);
-    transform: translateY(2px);
-}
-
-.analysis-panel-leave-to {
-    opacity: 0;
-    transform: translateY(-2px);
-}
-
-@keyframes tracking-pulse {
-    0%,
-    100% {
-        opacity: 0;
-        transform: scale(1);
-    }
-
-    45% {
-        opacity: 0.2;
-    }
-
-    80% {
-        opacity: 0;
-        transform: scale(2.2);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .tracking-status::before {
-        animation: none;
-    }
-}
-</style>

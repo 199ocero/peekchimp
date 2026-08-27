@@ -24,7 +24,6 @@ class AiInsightContextBuilder
             'percentage_change' => $candidate['percentage_change'] ?? null,
             'confidence' => substr((string) ($candidate['confidence'] ?? 'low'), 0, 16),
             'deterministic_summary' => substr((string) ($candidate['summary'] ?? ''), 0, 500),
-            'deterministic_recommendation' => substr((string) ($candidate['recommendation'] ?? ''), 0, 500),
         ], array_slice($candidates, 0, (int) config('analytics.ai.max_candidates', 5)));
 
         $payload = [
@@ -35,7 +34,12 @@ class AiInsightContextBuilder
             'rules' => [
                 'Use only these facts.',
                 'Do not assert causation.',
-                'Recommendations must be safe investigations grounded in the facts.',
+                'Return exactly one insight for every candidate and preserve its fingerprint exactly.',
+                'Do not merely repeat the deterministic summary as the explanation.',
+                'Give every candidate a distinct, metric-specific recommendation with a concrete next check.',
+                'State what to compare or verify and how that result should guide the next action.',
+                'Avoid generic advice such as review sources and pages, monitor the trend, or investigate further.',
+                'Recommend aggregate reports and segments only; never ask for a list or export of individual visitors.',
             ],
         ];
 
@@ -44,5 +48,11 @@ class AiInsightContextBuilder
         }
 
         return $payload;
+    }
+
+    /** @param array<string, mixed> $context */
+    public function hash(array $context): string
+    {
+        return sha1(json_encode($context, JSON_UNESCAPED_SLASHES) ?: '');
     }
 }

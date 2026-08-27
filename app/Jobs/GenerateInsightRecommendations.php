@@ -14,6 +14,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Ai\Ai;
 use Throwable;
 
@@ -25,19 +26,29 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 45;
 
+    public int $uniqueFor = 300;
+
     /** @param array<int, array<string, mixed>> $candidates */
     public function __construct(
         public Project $project,
         public array $candidates,
         public string $periodStart,
         public string $periodEnd,
+        public bool $force = false,
     ) {
         $this->onQueue('analytics');
     }
 
     public function uniqueId(): string
     {
-        return $this->project->getKey().':'.sha1(json_encode($this->candidates).$this->periodStart.$this->periodEnd);
+        $aggregateChanges = array_map(static fn (array $candidate): array => [
+            'fingerprint' => $candidate['fingerprint'] ?? null,
+            'current_value' => $candidate['current_value'] ?? null,
+            'previous_value' => $candidate['previous_value'] ?? null,
+            'percentage_change' => $candidate['percentage_change'] ?? null,
+        ], $this->candidates);
+
+        return $this->project->getKey().':'.sha1(json_encode($aggregateChanges).$this->periodStart.$this->periodEnd.($this->force ? ':manual' : ':automatic'));
     }
 
     /** @return array<int, int> */
@@ -51,10 +62,10 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
         $owner = $this->project->user()->first()?->workspaceOwnerUser();
         $setting = $owner?->workspaceAiSetting()->first();
         $payload = $contextBuilder->build($this->project, $this->candidates, $this->periodStart, $this->periodEnd);
-        $contextHash = sha1(json_encode($payload, JSON_UNESCAPED_SLASHES) ?: '');
+        $contextHash = $contextBuilder->hash($payload);
         $cooldown = now()->subHours((int) config('analytics.ai.cooldown_hours', 6));
 
-        if (AiInsightRun::query()
+        if (! $this->force && AiInsightRun::query()
             ->where('project_id', $this->project->getKey())
             ->where('status', 'completed')
             ->where('updated_at', '>', $cooldown)
@@ -67,7 +78,7 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
             ['candidate_count' => count($payload['candidates'])],
         );
 
-        if ($run->status === 'completed' && $run->updated_at?->gt($cooldown)) {
+        if ($run->status === 'completed') {
             return;
         }
 
@@ -99,11 +110,20 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
                 timeout: $this->timeout,
             );
             $structured = is_array($response->structured ?? null) ? $response->structured : [];
-            $this->applyResponse($structured);
+            $enhancedInsightCount = $this->applyResponse($structured);
+            if ($enhancedInsightCount > 0) {
+                Cache::forever(
+                    'dashboard:ai-insights-version:'.$this->project->getKey(),
+                    (string) microtime(true),
+                );
+            }
             $run->forceFill([
-                'status' => 'completed',
+                'status' => $enhancedInsightCount > 0 ? 'completed' : 'skipped',
                 'input_tokens' => $response->usage->promptTokens ?? null,
                 'output_tokens' => $response->usage->completionTokens ?? null,
+                'error' => $enhancedInsightCount > 0
+                    ? null
+                    : 'AI returned no distinct recommendations for the current analytics changes.',
                 'completed_at' => now(),
             ])->save();
         } catch (Throwable $exception) {
@@ -118,22 +138,51 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
     }
 
     /** @param array<string, mixed> $structured */
-    private function applyResponse(array $structured): void
+    private function applyResponse(array $structured): int
     {
-        $periodStart = CarbonImmutable::parse($this->periodStart)->utc()->toDateTimeString();
-        $periodEnd = CarbonImmutable::parse($this->periodEnd)->utc()->toDateTimeString();
+        $periodStart = CarbonImmutable::parse($this->periodStart)->toDateTimeString();
+        $periodEnd = CarbonImmutable::parse($this->periodEnd)->toDateTimeString();
+        $enhancedInsightCount = 0;
+        $recommendationCounts = collect((array) ($structured['insights'] ?? []))
+            ->filter(fn (mixed $insight): bool => is_array($insight) && is_string($insight['recommendation'] ?? null))
+            ->countBy(fn (array $insight): string => $this->normalizeRecommendation($insight['recommendation']));
 
         foreach ((array) ($structured['insights'] ?? []) as $insight) {
             if (! is_array($insight) || ! is_string($insight['fingerprint'] ?? null)) {
                 continue;
             }
 
-            $record = Insight::query()
+            $candidate = collect($this->candidates)->first(
+                fn (array $candidate): bool => ($candidate['fingerprint'] ?? null) === $insight['fingerprint'],
+            );
+            $recommendation = is_string($insight['recommendation'] ?? null)
+                ? trim($insight['recommendation'])
+                : '';
+            $normalizedRecommendation = $this->normalizeRecommendation($recommendation);
+            $normalizedFallback = $this->normalizeRecommendation((string) ($candidate['recommendation'] ?? ''));
+
+            if (
+                mb_strlen($recommendation) < 30
+                || $normalizedRecommendation === $normalizedFallback
+                || $recommendationCounts->get($normalizedRecommendation, 0) > 1
+                || $this->requestsIndividualVisitorData($recommendation)
+            ) {
+                continue;
+            }
+
+            $recordQuery = Insight::query()
                 ->where('project_id', $this->project->getKey())
-                ->where('fingerprint', $insight['fingerprint'])
-                ->where('period_start', $periodStart)
-                ->where('period_end', $periodEnd)
-                ->first();
+                ->where('fingerprint', $insight['fingerprint']);
+
+            if (is_int($candidate['id'] ?? null)) {
+                $recordQuery->whereKey($candidate['id']);
+            } else {
+                $recordQuery
+                    ->where('period_start', $periodStart)
+                    ->where('period_end', $periodEnd);
+            }
+
+            $record = $recordQuery->first();
 
             if ($record === null) {
                 continue;
@@ -141,12 +190,30 @@ class GenerateInsightRecommendations implements ShouldBeUnique, ShouldQueue
 
             $record->forceFill([
                 'explanation' => is_string($insight['explanation'] ?? null) ? mb_substr($insight['explanation'], 0, 2000) : $record->explanation,
-                'recommendation' => is_string($insight['recommendation'] ?? null) ? mb_substr($insight['recommendation'], 0, 2000) : $record->recommendation,
+                'recommendation' => mb_substr($recommendation, 0, 2000),
                 'metadata' => array_merge(
                     is_array($record->getAttribute('metadata')) ? $record->getAttribute('metadata') : [],
-                    ['ai_priority' => (int) ($insight['priority'] ?? 0), 'ai_confidence_note' => is_string($insight['confidence_note'] ?? null) ? $insight['confidence_note'] : null],
+                    [
+                        'ai_enhanced' => true,
+                        'ai_generated_at' => now()->toIso8601String(),
+                        'ai_priority' => (int) ($insight['priority'] ?? 0),
+                        'ai_confidence_note' => is_string($insight['confidence_note'] ?? null) ? $insight['confidence_note'] : null,
+                    ],
                 ),
             ])->save();
+            $enhancedInsightCount++;
         }
+
+        return $enhancedInsightCount;
+    }
+
+    private function normalizeRecommendation(string $recommendation): string
+    {
+        return mb_strtolower(trim(preg_replace('/\s+/', ' ', $recommendation) ?? ''));
+    }
+
+    private function requestsIndividualVisitorData(string $recommendation): bool
+    {
+        return preg_match('/\b(?:export|identify|inspect|list|pull)\b.{0,60}\b(?:individual\s+)?visitors?\b/i', $recommendation) === 1;
     }
 }

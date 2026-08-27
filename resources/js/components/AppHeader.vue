@@ -15,7 +15,9 @@ import UserMenuContent from '@/components/UserMenuContent.vue';
 import WebsiteSwitcher from '@/components/WebsiteSwitcher.vue';
 import { getInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
-import type { BreadcrumbItem } from '@/types';
+import { show as aiVisibilityShow } from '@/routes/websites/ai-visibility';
+import { index as goalsIndex } from '@/routes/websites/goals';
+import type { BreadcrumbItem, WebsiteSwitcherData } from '@/types';
 
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
@@ -27,13 +29,41 @@ const props = withDefaults(defineProps<Props>(), {
 
 const page = usePage();
 const auth = computed(() => page.props.auth);
+const websites = computed(
+    () => page.props.websites as WebsiteSwitcherData | null,
+);
+const currentWebsite = computed(() => websites.value?.current ?? null);
+
+const navigationItems = computed(() => {
+    if (!currentWebsite.value) {
+        return [];
+    }
+
+    return [
+        {
+            label: 'Overview',
+            href: dashboard().url,
+            active: page.url.startsWith('/dashboard'),
+        },
+        {
+            label: 'AI visibility',
+            href: aiVisibilityShow(currentWebsite.value.id).url,
+            active: page.url.includes('/ai-visibility'),
+        },
+        {
+            label: 'Goals',
+            href: goalsIndex(currentWebsite.value.id).url,
+            active: page.url.includes('/goals'),
+        },
+    ];
+});
 </script>
 
 <template>
     <div>
         <div class="border-b border-sidebar-border/80">
             <div
-                class="mx-auto flex h-12 w-full items-center gap-2 px-3 md:max-w-7xl md:px-4"
+                class="relative mx-auto flex h-14 w-full items-center gap-2 px-3 md:max-w-[1500px] md:px-6"
             >
                 <Link
                     :href="dashboard()"
@@ -51,6 +81,26 @@ const auth = computed(() => page.props.auth);
                 />
 
                 <WebsiteSwitcher />
+
+                <nav
+                    v-if="navigationItems.length"
+                    class="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex"
+                    aria-label="Website analytics"
+                >
+                    <Link
+                        v-for="item in navigationItems"
+                        :key="item.label"
+                        :href="item.href"
+                        class="rounded-full px-4 py-2 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+                        :class="
+                            item.active
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                        "
+                    >
+                        {{ item.label }}
+                    </Link>
+                </nav>
 
                 <div class="ml-auto flex items-center gap-1">
                     <AppearanceMenu />

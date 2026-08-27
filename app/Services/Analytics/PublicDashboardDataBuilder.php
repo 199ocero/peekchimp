@@ -16,6 +16,7 @@ class PublicDashboardDataBuilder
     {
         $public = [
             'range' => $analytics['range'],
+            'comparison' => $analytics['comparison'],
         ];
         $metrics = $analytics['metrics'];
 

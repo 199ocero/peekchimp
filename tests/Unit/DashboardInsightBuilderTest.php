@@ -2,6 +2,18 @@
 
 use App\Services\Analytics\DashboardInsightBuilder;
 
+test('it does not flag patterns before a previous period has traffic', function () {
+    $insights = new DashboardInsightBuilder()->build(48, 75, [
+        ['label' => 'Direct', 'value' => 48],
+    ], false);
+
+    expect($insights)->toBe([[
+        'type' => 'comparison_pending',
+        'tone' => 'neutral',
+        'value' => 48,
+    ]]);
+});
+
 test('it waits for a useful sample before suggesting changes', function () {
     $insights = new DashboardInsightBuilder()->build(19, 100, [
         ['label' => 'Direct', 'value' => 19],

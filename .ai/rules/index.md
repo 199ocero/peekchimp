@@ -4,10 +4,17 @@ Before planning or editing, find the row whose globs match the file's path and r
 
 | Applies to | Rule file |
 | --- | --- |
+| app/Services/Analytics/**,app/Jobs/GenerateInsightRecommendations.php,app/Ai/Agents/AnalyticsInsightAgent.php | .ai/rules/agents.md |
+| app/Queries/Analytics/**,app/Services/Analytics/** | .ai/rules/analytics-services-analytics.md |
 | app/Queries/Analytics/** | .ai/rules/analytics.md |
 | app/Http/Controllers/Api/** | .ai/rules/api.md |
 | bootstrap/app.php | .ai/rules/bootstrap.md |
+| resources/js/pages/Dashboard.vue,resources/js/components/AppHeader.vue | .ai/rules/components.md |
+| app/Jobs/GenerateInsightRecommendations.php,app/Http/Controllers/GenerateDashboardAiInsightsController.php,resources/js/pages/Dashboard.vue | .ai/rules/controllers-js-pages.md |
+| app/Jobs/GenerateInsightRecommendations.php,app/Http/Controllers/GenerateDashboardAiInsightsController.php,app/Services/Analytics/AiInsightContextBuilder.php | .ai/rules/controllers-services-analytics.md |
+| resources/js/pages/Dashboard.vue,resources/js/pages/public/Dashboard.vue,resources/js/components/dashboard/** | .ai/rules/dashboard.md |
 | ** | .ai/rules/general.md |
+| app/Services/Analytics/**,app/Jobs/**,resources/js/pages/Dashboard.vue | .ai/rules/js-pages.md |
 | app/Actions/Fortify/**,app/Http/Middleware/EnsureRegistrationIsAvailable.php,config/fortify.php | .ai/rules/middleware.md |
 | app/Models/Project.php | .ai/rules/models.md |
 | resources/js/pages/Dashboard.vue | .ai/rules/pages.md |

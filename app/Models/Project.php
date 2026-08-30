@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
+/** @property array<string, mixed>|null $settings */
 #[Fillable(['user_id', 'name', 'site_key', 'timezone', 'is_active', 'settings'])]
 #[Hidden(['public_share_token', 'public_share_token_hash'])]
 class Project extends Model
@@ -58,6 +59,34 @@ class Project extends Model
         )));
 
         return $sections === [] ? self::defaultPublicDashboardSections() : $sections;
+    }
+
+    /**
+     * @return array{audience: string, products_services: string, value_proposition: string, brand_voice: string, primary_conversion_goals: array<int, string>}
+     */
+    public function growthContext(): array
+    {
+        $context = data_get($this->settings ?? [], 'growth_context', []);
+        $conversionGoals = data_get($context, 'primary_conversion_goals', []);
+        if (! is_array($conversionGoals)) {
+            $conversionGoals = [];
+        }
+
+        $audience = data_get($context, 'audience');
+        $productsServices = data_get($context, 'products_services');
+        $valueProposition = data_get($context, 'value_proposition');
+        $brandVoice = data_get($context, 'brand_voice');
+
+        return [
+            'audience' => is_string($audience) ? $audience : '',
+            'products_services' => is_string($productsServices) ? $productsServices : '',
+            'value_proposition' => is_string($valueProposition) ? $valueProposition : '',
+            'brand_voice' => is_string($brandVoice) ? $brandVoice : '',
+            'primary_conversion_goals' => collect($conversionGoals)
+                ->filter(fn (mixed $goal): bool => is_string($goal) && $goal !== '')
+                ->values()
+                ->all(),
+        ];
     }
 
     public function hasPublicSharingEnabled(): bool
@@ -123,6 +152,12 @@ class Project extends Model
     public function aiVisibilityScans(): HasMany
     {
         return $this->hasMany(AiVisibilityScan::class);
+    }
+
+    /** @return HasMany<WebsitePageSnapshot, $this> */
+    public function pageSnapshots(): HasMany
+    {
+        return $this->hasMany(WebsitePageSnapshot::class);
     }
 
     /** @return HasOne<SearchConsoleConnection, $this> */

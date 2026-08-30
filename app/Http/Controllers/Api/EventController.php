@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Analytics\IngestEventsAction;
+use App\Actions\Websites\QueueWebsiteCrawlAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StoreEventsRequest;
 use App\Models\Project;
@@ -12,8 +13,11 @@ use Illuminate\Support\Str;
 
 class EventController extends Controller
 {
-    public function __invoke(StoreEventsRequest $request, IngestEventsAction $action): JsonResponse
-    {
+    public function __invoke(
+        StoreEventsRequest $request,
+        IngestEventsAction $action,
+        QueueWebsiteCrawlAction $queueWebsiteCrawl,
+    ): JsonResponse {
         if ((int) ($request->header('Content-Length') ?? 0) > (int) config('analytics.ingestion_max_bytes', 65536)) {
             return response()->json(['message' => 'Payload is too large.'], 413);
         }
@@ -37,7 +41,11 @@ class EventController extends Controller
         $result = $action->handle($project, $request->validated(), $request);
 
         if ($result['accepted_page_view']) {
-            $this->verifyDomain($project, $origin);
+            $wasJustVerified = $this->verifyDomain($project, $origin);
+
+            if ($wasJustVerified) {
+                $queueWebsiteCrawl->handle($project);
+            }
         }
 
         return response()
@@ -64,17 +72,18 @@ class EventController extends Controller
         return $domains->isEmpty() || $domains->contains($host);
     }
 
-    private function verifyDomain(Project $project, ?string $origin): void
+    private function verifyDomain(Project $project, ?string $origin): bool
     {
         $host = $this->originHost($origin);
 
         if ($host === null) {
-            return;
+            return false;
         }
 
-        $project->domains
-            ->first(fn ($domain): bool => $this->normalizeHost($domain->domain) === $host)
-            ?->update(['is_verified' => true]);
+        return $project->domains()
+            ->where('domain', $host)
+            ->where('is_verified', false)
+            ->update(['is_verified' => true]) === 1;
     }
 
     private function originHost(?string $origin): ?string

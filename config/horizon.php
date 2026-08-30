@@ -98,6 +98,7 @@ return [
 
     'waits' => [
         'redis:default' => 60,
+        'redis:crawl' => 120,
     ],
 
     /*
@@ -222,6 +223,18 @@ return [
             'timeout' => 150,
             'nice' => 0,
         ],
+        'supervisor-crawl' => [
+            'connection' => 'redis',
+            'queue' => ['crawl'],
+            'balance' => false,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 2,
+            'timeout' => 60,
+            'nice' => 5,
+        ],
     ],
 
     'environments' => [
@@ -234,6 +247,9 @@ return [
             'supervisor-ai' => [
                 'maxProcesses' => 1,
             ],
+            'supervisor-crawl' => [
+                'maxProcesses' => 2,
+            ],
         ],
 
         'local' => [
@@ -241,6 +257,9 @@ return [
                 'maxProcesses' => 2,
             ],
             'supervisor-ai' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-crawl' => [
                 'maxProcesses' => 1,
             ],
         ],

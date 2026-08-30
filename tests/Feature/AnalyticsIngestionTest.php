@@ -1,9 +1,11 @@
 <?php
 
+use App\Jobs\RunAiVisibilityScan;
 use App\Models\AnalyticsEvent;
 use App\Models\AnalyticsSession;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
 
@@ -200,6 +202,7 @@ test('registered domains protect a project event endpoint', function () {
 });
 
 test('an accepted pageview from the registered domain verifies it', function () {
+    Queue::fake();
     $project = Project::factory()->create();
     $domain = $project->domains()->create(['domain' => 'example.test']);
 
@@ -211,6 +214,27 @@ test('an accepted pageview from the registered domain verifies it', function () 
         ->assertAccepted();
 
     expect($domain->refresh()->is_verified)->toBeTrue();
+    Queue::assertPushed(RunAiVisibilityScan::class, fn (RunAiVisibilityScan $job): bool => $job->project->is($project));
+});
+
+test('subsequent accepted pageviews do not queue another initial website crawl', function () {
+    Queue::fake();
+    $project = Project::factory()->create();
+    $project->domains()->create(['domain' => 'example.test']);
+
+    foreach ([
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+    ] as $eventId) {
+        $this->withHeaders([
+            'Origin' => 'https://example.test',
+            'User-Agent' => 'Mozilla/5.0 Chrome/126 Safari/537.36',
+            'Accept-Language' => 'en-US',
+        ])->postJson(route('api.v1.events.store'), analyticsPayload($project->site_key, $eventId))
+            ->assertAccepted();
+    }
+
+    Queue::assertPushed(RunAiVisibilityScan::class, 1);
 });
 
 test('a pageview without an origin does not verify a registered domain', function () {

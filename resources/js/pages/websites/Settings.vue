@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage, usePoll } from '@inertiajs/vue3';
 import {
     Check,
     Clipboard,
@@ -11,10 +11,11 @@ import {
     RotateCcw,
     Search,
     ShieldCheck,
+    Target,
     Unplug,
 } from '@lucide/vue';
 import { useClipboard } from '@vueuse/core';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,6 +23,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
+import { store as queueWebsiteCrawl } from '@/routes/websites/crawl';
 import {
     connect as connectSearchConsole,
     destroy as destroySearchConsole,
@@ -45,9 +47,22 @@ const props = defineProps<{
         domain: string | null;
         siteKey: string;
         isVerified: boolean;
+        growthContext: {
+            audience: string;
+            products_services: string;
+            value_proposition: string;
+            brand_voice: string;
+            primary_conversion_goals: string[];
+        };
     };
     timezones: string[];
     trackerUrl: string;
+    websiteCrawl: {
+        status: string;
+        lastCrawledAt: string | null;
+        pageCount: number;
+        error: string | null;
+    };
     publicSharing: {
         enabled: boolean;
         url: string | null;
@@ -76,6 +91,22 @@ const generalForm = useForm({
     name: props.website.name,
     timezone: props.website.timezone,
 });
+const contextForm = useForm({
+    name: props.website.name,
+    timezone: props.website.timezone,
+    growth_context: {
+        audience: props.website.growthContext.audience,
+        products_services: props.website.growthContext.products_services,
+        value_proposition: props.website.growthContext.value_proposition,
+        brand_voice: props.website.growthContext.brand_voice,
+        primary_conversion_goals: [
+            ...props.website.growthContext.primary_conversion_goals,
+        ],
+    },
+});
+const conversionGoals = ref(
+    props.website.growthContext.primary_conversion_goals.join('\n'),
+);
 const sharingForm = useForm({
     enabled: props.publicSharing.enabled,
     sections: [...props.publicSharing.sections] as PublicSection[],
@@ -84,6 +115,14 @@ const propertyForm = useForm({
     site_url: props.searchConsole.candidates[0]?.siteUrl ?? '',
 });
 const page = usePage();
+const { start: startCrawlPolling, stop: stopCrawlPolling } = usePoll(
+    3000,
+    { only: ['websiteCrawl'] },
+    { autoStart: false },
+);
+const isCrawlInProgress = computed(() =>
+    ['queued', 'running'].includes(props.websiteCrawl.status),
+);
 const searchConsoleError = computed(() =>
     typeof page.props.errors?.search_console === 'string'
         ? page.props.errors.search_console
@@ -131,6 +170,23 @@ function saveGeneral(): void {
     generalForm.submit(updateWebsiteSettings(props.website.id), {
         preserveScroll: true,
     });
+}
+
+function saveGrowthContext(): void {
+    contextForm
+        .transform((data) => ({
+            ...data,
+            growth_context: {
+                ...data.growth_context,
+                primary_conversion_goals: conversionGoals.value
+                    .split('\n')
+                    .map((goal) => goal.trim())
+                    .filter(Boolean),
+            },
+        }))
+        .submit(updateWebsiteSettings(props.website.id), {
+            preserveScroll: true,
+        });
 }
 
 function saveSharing(): void {
@@ -181,6 +237,14 @@ function syncGoogleSearchConsole(): void {
     );
 }
 
+function runWebsiteCrawl(): void {
+    router.post(
+        queueWebsiteCrawl(props.website.id).url,
+        {},
+        { preserveScroll: true },
+    );
+}
+
 function disconnectGoogleSearchConsole(): void {
     if (
         !window.confirm(
@@ -195,9 +259,12 @@ function disconnectGoogleSearchConsole(): void {
     });
 }
 
-function formatTimestamp(value: string | null): string {
+function formatTimestamp(
+    value: string | null,
+    fallback = 'Not synced yet',
+): string {
     if (!value) {
-        return 'Not synced yet';
+        return fallback;
     }
 
     return new Intl.DateTimeFormat(undefined, {
@@ -205,6 +272,18 @@ function formatTimestamp(value: string | null): string {
         timeStyle: 'short',
     }).format(new Date(value));
 }
+
+watch(
+    isCrawlInProgress,
+    (inProgress) => {
+        if (inProgress) {
+            startCrawlPolling();
+        } else {
+            stopCrawlPolling();
+        }
+    },
+    { immediate: true },
+);
 
 async function copy(value: string): Promise<void> {
     await copyText(value);
@@ -247,7 +326,9 @@ async function copy(value: string): Promise<void> {
                 <a
                     v-for="item in [
                         ['general', 'General'],
+                        ['growth-context', 'Growth context'],
                         ['installation', 'Installation'],
+                        ['website-crawl', 'Website crawl'],
                         ['search-console', 'Search Console'],
                         ['sharing', 'Public sharing'],
                     ]"
@@ -337,6 +418,165 @@ async function copy(value: string): Promise<void> {
                                         generalForm.processing
                                             ? 'Saving…'
                                             : 'Save changes'
+                                    }}
+                                </Button>
+                            </div>
+                        </form>
+                    </Card>
+                </section>
+
+                <section id="growth-context" class="scroll-mt-6">
+                    <Card class="gap-0 p-5 sm:p-6">
+                        <div class="flex items-start gap-3">
+                            <span
+                                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
+                                aria-hidden="true"
+                            >
+                                <Target class="size-4" />
+                            </span>
+                            <div>
+                                <h2 class="font-medium">Growth context</h2>
+                                <p class="mt-1 text-sm text-muted-foreground">
+                                    Give the read-only consultant enough context
+                                    to make specific recommendations in your
+                                    voice.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form
+                            class="mt-6 grid gap-5"
+                            @submit.prevent="saveGrowthContext"
+                        >
+                            <div class="grid gap-2">
+                                <Label for="growth-audience"
+                                    >Target audience</Label
+                                >
+                                <textarea
+                                    id="growth-audience"
+                                    v-model="
+                                        contextForm.growth_context.audience
+                                    "
+                                    rows="3"
+                                    maxlength="2000"
+                                    placeholder="Who you serve, what they care about, and what brings them to the site."
+                                    class="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                                />
+                                <InputError
+                                    :message="
+                                        contextForm.errors[
+                                            'growth_context.audience'
+                                        ]
+                                    "
+                                />
+                            </div>
+
+                            <div class="grid gap-2">
+                                <Label for="growth-products"
+                                    >Products and services</Label
+                                >
+                                <textarea
+                                    id="growth-products"
+                                    v-model="
+                                        contextForm.growth_context
+                                            .products_services
+                                    "
+                                    rows="4"
+                                    maxlength="3000"
+                                    placeholder="Describe your offers, pricing model, and important differentiators."
+                                    class="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                                />
+                                <InputError
+                                    :message="
+                                        contextForm.errors[
+                                            'growth_context.products_services'
+                                        ]
+                                    "
+                                />
+                            </div>
+
+                            <div class="grid gap-2">
+                                <Label for="growth-value-proposition"
+                                    >Value proposition</Label
+                                >
+                                <textarea
+                                    id="growth-value-proposition"
+                                    v-model="
+                                        contextForm.growth_context
+                                            .value_proposition
+                                    "
+                                    rows="3"
+                                    maxlength="2000"
+                                    placeholder="Why a visitor should choose you and what outcome you promise."
+                                    class="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                                />
+                                <InputError
+                                    :message="
+                                        contextForm.errors[
+                                            'growth_context.value_proposition'
+                                        ]
+                                    "
+                                />
+                            </div>
+
+                            <div class="grid gap-5 sm:grid-cols-2">
+                                <div class="grid gap-2">
+                                    <Label for="growth-brand-voice"
+                                        >Brand voice</Label
+                                    >
+                                    <textarea
+                                        id="growth-brand-voice"
+                                        v-model="
+                                            contextForm.growth_context
+                                                .brand_voice
+                                        "
+                                        rows="5"
+                                        maxlength="1000"
+                                        placeholder="For example: direct, warm, practical, and never hype-driven."
+                                        class="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                                    />
+                                    <InputError
+                                        :message="
+                                            contextForm.errors[
+                                                'growth_context.brand_voice'
+                                            ]
+                                        "
+                                    />
+                                </div>
+
+                                <div class="grid gap-2">
+                                    <Label for="growth-conversion-goals"
+                                        >Primary conversion goals</Label
+                                    >
+                                    <textarea
+                                        id="growth-conversion-goals"
+                                        v-model="conversionGoals"
+                                        rows="5"
+                                        placeholder="Start a free trial\nBook a demo\nJoin the newsletter"
+                                        class="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                                    />
+                                    <p class="text-xs text-muted-foreground">
+                                        Add one goal per line, up to 10.
+                                    </p>
+                                    <InputError
+                                        :message="
+                                            contextForm.errors[
+                                                'growth_context.primary_conversion_goals'
+                                            ]
+                                        "
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="flex justify-end">
+                                <Button
+                                    type="submit"
+                                    :disabled="contextForm.processing"
+                                >
+                                    {{
+                                        contextForm.processing
+                                            ? 'Saving…'
+                                            : 'Save growth context'
                                     }}
                                 </Button>
                             </div>
@@ -448,6 +688,87 @@ async function copy(value: string): Promise<void> {
                                 <code class="font-mono">&lt;/head&gt;</code> tag
                                 on {{ website.domain ?? 'your website' }}.
                             </p>
+                        </div>
+                    </Card>
+                </section>
+
+                <section id="website-crawl" class="scroll-mt-6">
+                    <Card class="gap-0 p-5 sm:p-6">
+                        <div class="flex items-start gap-3">
+                            <span
+                                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
+                                aria-hidden="true"
+                            >
+                                <RefreshCw
+                                    class="size-4"
+                                    :class="isCrawlInProgress && 'animate-spin'"
+                                />
+                            </span>
+                            <div>
+                                <h2 class="font-medium">Website crawl</h2>
+                                <p class="mt-1 text-sm text-muted-foreground">
+                                    Peekchimp captures public page content and
+                                    technical signals for its growth guidance.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div
+                            class="mt-6 flex flex-col gap-4 rounded-xl border border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <p class="text-sm font-medium capitalize">
+                                        {{
+                                            websiteCrawl.status.replace(
+                                                '_',
+                                                ' ',
+                                            )
+                                        }}
+                                    </p>
+                                    <span
+                                        class="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium"
+                                    >
+                                        {{ websiteCrawl.pageCount }}
+                                        {{
+                                            websiteCrawl.pageCount === 1
+                                                ? 'page'
+                                                : 'pages'
+                                        }}
+                                    </span>
+                                </div>
+                                <p class="mt-2 text-xs text-muted-foreground">
+                                    Last captured
+                                    {{
+                                        formatTimestamp(
+                                            websiteCrawl.lastCrawledAt,
+                                            'Not crawled yet',
+                                        )
+                                    }}
+                                </p>
+                                <p
+                                    v-if="websiteCrawl.error"
+                                    class="mt-2 text-xs text-destructive"
+                                >
+                                    {{ websiteCrawl.error }}
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                :disabled="isCrawlInProgress"
+                                @click="runWebsiteCrawl"
+                            >
+                                <RefreshCw
+                                    class="size-3.5"
+                                    :class="isCrawlInProgress && 'animate-spin'"
+                                />
+                                {{
+                                    isCrawlInProgress
+                                        ? 'Crawl in progress'
+                                        : 'Run crawl'
+                                }}
+                            </Button>
                         </div>
                     </Card>
                 </section>

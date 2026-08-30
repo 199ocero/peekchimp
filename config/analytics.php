@@ -14,6 +14,19 @@ return [
         'request_timeout_seconds' => 20,
     ],
 
+    'website_crawl' => [
+        'max_pages' => 100,
+        'max_response_bytes' => 2 * 1024 * 1024,
+        'max_extracted_characters' => 50000,
+        'max_tool_content_characters' => 20000,
+        'connect_timeout_seconds' => 3,
+        'request_timeout_seconds' => 10,
+        'max_redirects' => 5,
+        'stale_after_days' => 8,
+        'retention_days' => 90,
+        'versions_per_url' => 2,
+    ],
+
     'rollups' => [
         'enabled' => (bool) env('PEEKCHIMP_ANALYTICS_ROLLUPS', true),
         'closed_after_minutes' => 60,
@@ -32,7 +45,7 @@ return [
 
     'ai' => [
         'enabled' => (bool) env('PEEKCHIMP_AI_ENABLED', true),
-        'providers' => ['openai', 'anthropic', 'gemini', 'openrouter', 'deepseek', 'ollama', 'openai-compatible'],
+        'providers' => ['openai', 'anthropic', 'gemini', 'deepseek'],
         'max_payload_bytes' => 12288,
         'max_candidates' => 5,
         'cooldown_hours' => 6,

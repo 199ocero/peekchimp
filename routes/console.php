@@ -26,6 +26,9 @@ Schedule::call(function (): void {
         ->whereHas('domains', fn ($query) => $query->where('is_verified', true))
         ->cursor()
         ->each(function (Project $project): void {
+            if ($project->aiVisibilityScans()->whereIn('status', ['queued', 'running'])->exists()) {
+                return;
+            }
             $scan = $project->aiVisibilityScans()->create(['status' => 'queued']);
             RunAiVisibilityScan::dispatch($project, $scan);
         });

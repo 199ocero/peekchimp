@@ -6,6 +6,7 @@ use App\Actions\Websites\UpdateWebsiteSettingsAction;
 use App\Http\Requests\UpdateWebsiteSettingsRequest;
 use App\Models\Project;
 use App\Services\SearchConsole\SearchConsoleAnalyticsService;
+use App\Services\Websites\WebsiteSnapshotService;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,10 +22,13 @@ class WebsiteSettingsController extends Controller
         Request $request,
         Project $project,
         SearchConsoleAnalyticsService $searchConsoleAnalytics,
+        WebsiteSnapshotService $snapshots,
     ): Response {
         Gate::authorize('manage', $project);
-        $project->loadMissing(['domains', 'searchConsoleConnection']);
+        $project->loadMissing(['domains', 'searchConsoleConnection', 'aiVisibilityScans']);
         $connection = $project->searchConsoleConnection;
+        $latestCrawl = $project->aiVisibilityScans->sortByDesc('created_at')->first();
+        $crawlFreshness = $snapshots->freshness($project);
 
         return Inertia::render('websites/Settings', [
             'website' => [
@@ -34,9 +38,16 @@ class WebsiteSettingsController extends Controller
                 'domain' => $project->domains->first()?->domain,
                 'siteKey' => $project->site_key,
                 'isVerified' => $project->domains->contains(fn ($domain): bool => $domain->is_verified),
+                'growthContext' => $project->growthContext(),
             ],
             'timezones' => DateTimeZone::listIdentifiers(),
             'trackerUrl' => asset('a.js'),
+            'websiteCrawl' => [
+                'status' => data_get($latestCrawl, 'status', 'not_started'),
+                'lastCrawledAt' => $crawlFreshness['last_crawled_at'],
+                'pageCount' => $crawlFreshness['page_count'],
+                'error' => $latestCrawl?->error,
+            ],
             'publicSharing' => [
                 'enabled' => $project->hasPublicSharingEnabled(),
                 'url' => $project->public_share_token === null

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\MemberInvitationController;
+use App\Http\Controllers\Settings\McpConnectionController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\WorkspaceAiSettingsController;
@@ -43,4 +44,10 @@ Route::middleware(['auth', 'verified', 'website.configured'])->group(function ()
         ->name('settings.ai.update');
     Route::post('settings/ai/test', [WorkspaceAiSettingsController::class, 'test'])
         ->name('settings.ai.test');
+
+    Route::get('settings/mcp', [McpConnectionController::class, 'edit'])
+        ->name('settings.mcp.edit');
+    Route::delete('settings/mcp/connections/{client}', [McpConnectionController::class, 'destroy'])
+        ->where('client', '[A-Za-z0-9-]+')
+        ->name('settings.mcp.connections.destroy');
 });

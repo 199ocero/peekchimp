@@ -11,6 +11,7 @@ import { edit as editMembers } from '@/routes/members';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
 import { edit as editAi } from '@/routes/settings/ai';
+import { edit as editMcp } from '@/routes/settings/mcp';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -26,6 +27,10 @@ const sidebarNavItems = computed<NavItem[]>(() => [
     {
         title: 'Appearance',
         href: editAppearance(),
+    },
+    {
+        title: 'MCP connections',
+        href: editMcp(),
     },
     ...(page.props.auth.user?.is_admin
         ? [

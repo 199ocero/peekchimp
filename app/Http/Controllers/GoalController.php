@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Goals\CreateGoalAction;
 use App\Http\Requests\StoreGoalRequest;
 use App\Http\Requests\UpdateGoalRequest;
 use App\Jobs\BackfillGoalConversions;
@@ -41,12 +42,10 @@ class GoalController extends Controller
         ]);
     }
 
-    public function store(StoreGoalRequest $request, Project $project): RedirectResponse
+    public function store(StoreGoalRequest $request, Project $project, CreateGoalAction $createGoal): RedirectResponse
     {
         Gate::authorize('manage', $project);
-        $data = $this->normalized($request->validated());
-        $goal = $project->goals()->create($data);
-        BackfillGoalConversions::dispatch($goal);
+        $createGoal->handle($project, $request->validated());
 
         return to_route('websites.goals.index', $project);
     }

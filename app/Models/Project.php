@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable(['user_id', 'name', 'site_key', 'timezone', 'is_active', 'settings'])]
 #[Hidden(['public_share_token', 'public_share_token_hash'])]
@@ -122,5 +123,17 @@ class Project extends Model
     public function aiVisibilityScans(): HasMany
     {
         return $this->hasMany(AiVisibilityScan::class);
+    }
+
+    /** @return HasOne<SearchConsoleConnection, $this> */
+    public function searchConsoleConnection(): HasOne
+    {
+        return $this->hasOne(SearchConsoleConnection::class);
+    }
+
+    /** @return HasMany<SearchConsoleMetric, $this> */
+    public function searchConsoleMetrics(): HasMany
+    {
+        return $this->hasMany(SearchConsoleMetric::class);
     }
 }

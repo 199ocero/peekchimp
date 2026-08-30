@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Head, Link, router, usePage, usePoll } from '@inertiajs/vue3';
+import {
+    Deferred,
+    Head,
+    Link,
+    router,
+    usePage,
+    usePoll,
+} from '@inertiajs/vue3';
 import {
     Bot,
     CalendarDays,
@@ -14,6 +21,7 @@ import {
     Lightbulb,
     RefreshCw,
     ScanEye,
+    Search,
     Share2,
     Smartphone,
     Sparkles,
@@ -115,6 +123,87 @@ type AiInsightRun = {
     error: string | null;
     updatedAt: string;
 };
+type SearchMetric = {
+    current: number | null;
+    previous: number | null;
+    change: number | null;
+    improved: boolean | null;
+};
+type SearchPerformance = {
+    status:
+        | 'not_connected'
+        | 'connected'
+        | 'syncing'
+        | 'error'
+        | 'reconnect_required'
+        | 'no_data';
+    connection?: {
+        propertySiteUrl: string;
+        dataThrough: string | null;
+        lastSyncedAt: string | null;
+        lastError: string | null;
+    };
+    range?: { from: string; to: string };
+    metrics?: {
+        clicks: SearchMetric;
+        impressions: SearchMetric;
+        ctr: SearchMetric;
+        position: SearchMetric;
+    } | null;
+    timeseries?: Array<{
+        date: string;
+        clicks: number;
+        impressions: number;
+    }>;
+    pages?: SearchBreakdown[];
+    queries?: SearchBreakdown[];
+    organicFunnel?: {
+        impressions: number;
+        clicks: number;
+        visits: number;
+        engagedVisits: number;
+        conversions: number;
+        searchCtr: number;
+        trackedVisitRate: number | null;
+        engagementRate: number | null;
+        conversionRate: number | null;
+    };
+    landingPages?: OrganicLandingPage[];
+    insights?: Array<{
+        title: string;
+        detail: string;
+        recommendation: string;
+    }>;
+};
+type SearchBreakdown = {
+    label: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number | null;
+};
+type OrganicLandingPage = {
+    path: string;
+    impressions: number;
+    clicks: number;
+    ctr: number;
+    position: number | null;
+    visits: number;
+    visitors: number;
+    engagedVisits: number;
+    bounceRate: number;
+    averageDuration: number;
+    conversions: number;
+    conversionRate: number;
+    trackedVisitRate: number | null;
+    topQueries: Array<{
+        query: string;
+        clicks: number;
+        impressions: number;
+        ctr: number;
+        position: number | null;
+    }>;
+};
 
 const props = defineProps<{
     project: {
@@ -125,6 +214,7 @@ const props = defineProps<{
     };
     analytics: Analytics;
     aiInsightRun?: AiInsightRun | null;
+    searchPerformance?: SearchPerformance;
 }>();
 
 defineOptions({
@@ -140,6 +230,8 @@ const isManualRefreshing = ref(false);
 const isChangingRange = ref(false);
 const activePageTab = ref<'top' | 'entry' | 'exit'>('top');
 const showAllPages = ref(false);
+const activeSearchTab = ref<'landingPages' | 'queries'>('landingPages');
+const selectedLandingPagePath = ref<string | null>(null);
 let refreshTimer: number | undefined;
 let aiPollRunId: number | null = null;
 
@@ -161,6 +253,15 @@ const comparisonLabel = computed(() => {
 
     return 'Previous matching period';
 });
+
+const selectedLandingPage = computed(
+    () =>
+        props.searchPerformance?.landingPages?.find(
+            (landingPage) => landingPage.path === selectedLandingPagePath.value,
+        ) ??
+        props.searchPerformance?.landingPages?.[0] ??
+        null,
+);
 
 const metricCards = computed(() => [
     {
@@ -605,7 +706,7 @@ function loadRange(range: string): void {
         {
             preserveState: true,
             preserveScroll: true,
-            only: ['analytics', 'aiInsightRun'],
+            only: ['analytics', 'aiInsightRun', 'searchPerformance'],
             onFinish: () => {
                 isChangingRange.value = false;
             },
@@ -616,7 +717,7 @@ function loadRange(range: string): void {
 function refresh(): void {
     isManualRefreshing.value = true;
     router.reload({
-        only: ['analytics', 'aiInsightRun'],
+        only: ['analytics', 'aiInsightRun', 'searchPerformance'],
         onFinish: () => {
             isManualRefreshing.value = false;
         },
@@ -1147,6 +1248,544 @@ onBeforeUnmount(() => {
                     </div>
                 </Card>
             </section>
+
+            <Deferred data="searchPerformance">
+                <section aria-label="Google Search Console performance">
+                    <Card
+                        v-if="searchPerformance?.status === 'not_connected'"
+                        class="rounded-2xl border-border/80 p-5 shadow-xs sm:p-6"
+                    >
+                        <div
+                            class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div class="flex items-start gap-3">
+                                <span
+                                    class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                >
+                                    <Search class="size-4.5" />
+                                </span>
+                                <div>
+                                    <h2 class="font-semibold">
+                                        Add organic search performance
+                                    </h2>
+                                    <p
+                                        class="mt-1 text-sm text-muted-foreground"
+                                    >
+                                        Connect Google Search Console to see how
+                                        people find the website and what they do
+                                        after arriving.
+                                    </p>
+                                </div>
+                            </div>
+                            <Button as-child class="shrink-0 rounded-xl">
+                                <Link
+                                    :href="editWebsiteSettings(project.id).url"
+                                >
+                                    Connect Search Console
+                                </Link>
+                            </Button>
+                        </div>
+                    </Card>
+
+                    <Card
+                        v-else-if="searchPerformance?.metrics"
+                        class="overflow-hidden rounded-2xl border-border/80 p-0 shadow-xs"
+                    >
+                        <div
+                            class="flex flex-col gap-3 border-b border-border/70 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6"
+                        >
+                            <div class="flex items-start gap-3">
+                                <span
+                                    class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                >
+                                    <Search class="size-4.5" />
+                                </span>
+                                <div>
+                                    <div
+                                        class="flex flex-wrap items-center gap-2"
+                                    >
+                                        <h2 class="font-semibold">
+                                            Your Google search story
+                                        </h2>
+                                        <span
+                                            v-if="
+                                                searchPerformance.status ===
+                                                'syncing'
+                                            "
+                                            class="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-medium text-cyan-700 dark:text-cyan-300"
+                                        >
+                                            Syncing
+                                        </span>
+                                        <span
+                                            v-if="
+                                                searchPerformance.status ===
+                                                'reconnect_required'
+                                            "
+                                            class="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive"
+                                        >
+                                            Reconnect required
+                                        </span>
+                                    </div>
+                                    <p
+                                        class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground"
+                                    >
+                                        Google Search Console shows how people
+                                        discovered you. Peekchimp shows what
+                                        they did after arriving.
+                                    </p>
+                                </div>
+                            </div>
+                            <Button
+                                as-child
+                                variant="outline"
+                                size="sm"
+                                class="rounded-xl"
+                            >
+                                <Link
+                                    :href="editWebsiteSettings(project.id).url"
+                                >
+                                    Manage connection
+                                </Link>
+                            </Button>
+                        </div>
+
+                        <div
+                            v-if="searchPerformance.organicFunnel"
+                            class="border-b border-border/70 bg-emerald-500/[0.04] p-5 sm:p-6"
+                        >
+                            <p
+                                class="max-w-4xl text-lg leading-8 font-medium tracking-[-0.02em] sm:text-xl"
+                            >
+                                Your pages appeared in Google
+                                <span
+                                    class="text-emerald-700 dark:text-emerald-300"
+                                    >{{
+                                        formatNumber(
+                                            searchPerformance.organicFunnel
+                                                .impressions,
+                                        )
+                                    }}
+                                    times</span
+                                >
+                                and received
+                                <span
+                                    class="text-emerald-700 dark:text-emerald-300"
+                                    >{{
+                                        formatNumber(
+                                            searchPerformance.organicFunnel
+                                                .clicks,
+                                        )
+                                    }}
+                                    clicks</span
+                                >. Peekchimp tracked
+                                <span
+                                    class="text-emerald-700 dark:text-emerald-300"
+                                    >{{
+                                        formatNumber(
+                                            searchPerformance.organicFunnel
+                                                .visits,
+                                        )
+                                    }}
+                                    visits</span
+                                >;
+                                {{
+                                    formatNumber(
+                                        searchPerformance.organicFunnel
+                                            .engagedVisits,
+                                    )
+                                }}
+                                engaged and
+                                {{
+                                    formatNumber(
+                                        searchPerformance.organicFunnel
+                                            .conversions,
+                                    )
+                                }}
+                                completed a goal.
+                            </p>
+                            <p class="mt-2 text-xs text-muted-foreground">
+                                This is an aggregate journey for the selected
+                                period, not individual visitor tracking.
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="searchPerformance.organicFunnel"
+                            class="border-b border-border/70 p-5 sm:p-6"
+                        >
+                            <h3 class="text-sm font-semibold">
+                                Three answers that matter
+                            </h3>
+                            <div class="mt-4 grid gap-3 lg:grid-cols-3">
+                                <article
+                                    class="rounded-xl border border-border/80 bg-muted/20 p-4"
+                                >
+                                    <p
+                                        class="text-xs font-medium text-muted-foreground"
+                                    >
+                                        Are people finding the website?
+                                    </p>
+                                    <p
+                                        class="mt-4 text-3xl font-semibold tracking-tight tabular-nums"
+                                    >
+                                        {{
+                                            formatNumber(
+                                                searchPerformance.organicFunnel
+                                                    .clicks,
+                                            )
+                                        }}
+                                        <span
+                                            class="text-sm font-normal text-muted-foreground"
+                                            >Google clicks</span
+                                        >
+                                    </p>
+                                    <p
+                                        class="mt-2 text-sm leading-6 text-muted-foreground"
+                                    >
+                                        Google showed your pages to people who
+                                        were searching for related topics.
+                                    </p>
+                                </article>
+                                <article
+                                    class="rounded-xl border border-border/80 bg-muted/20 p-4"
+                                >
+                                    <p
+                                        class="text-xs font-medium text-muted-foreground"
+                                    >
+                                        What happened after they clicked?
+                                    </p>
+                                    <p
+                                        class="mt-4 text-3xl font-semibold tracking-tight tabular-nums"
+                                    >
+                                        {{
+                                            formatNumber(
+                                                searchPerformance.organicFunnel
+                                                    .engagedVisits,
+                                            )
+                                        }}
+                                        <span
+                                            class="text-sm font-normal text-muted-foreground"
+                                            >engaged visits</span
+                                        >
+                                    </p>
+                                    <p
+                                        class="mt-2 text-sm leading-6 text-muted-foreground"
+                                    >
+                                        Peekchimp measured what visitors did
+                                        after they reached the website.
+                                    </p>
+                                </article>
+                                <article
+                                    class="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4"
+                                >
+                                    <p
+                                        class="text-xs font-medium text-muted-foreground"
+                                    >
+                                        Did the traffic create value?
+                                    </p>
+                                    <p
+                                        class="mt-4 text-3xl font-semibold tracking-tight tabular-nums"
+                                    >
+                                        {{
+                                            formatNumber(
+                                                searchPerformance.organicFunnel
+                                                    .conversions,
+                                            )
+                                        }}
+                                        <span
+                                            class="text-sm font-normal text-muted-foreground"
+                                            >goal conversions</span
+                                        >
+                                    </p>
+                                    <p
+                                        class="mt-2 text-sm leading-6 text-muted-foreground"
+                                    >
+                                        These visits completed a goal configured
+                                        in Peekchimp.
+                                    </p>
+                                </article>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="searchPerformance.insights?.length"
+                            class="border-b border-border/70 p-5 sm:p-6"
+                        >
+                            <article class="flex items-start gap-3">
+                                <span
+                                    class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                >
+                                    <Lightbulb class="size-4" />
+                                </span>
+                                <div>
+                                    <p
+                                        class="text-[10px] font-medium tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        What to improve next
+                                    </p>
+                                    <p class="mt-1 text-sm font-semibold">
+                                        {{
+                                            searchPerformance.insights[0].title
+                                        }}
+                                    </p>
+                                    <p
+                                        class="mt-1 text-sm leading-6 text-muted-foreground"
+                                    >
+                                        {{
+                                            searchPerformance.insights[0]
+                                                .recommendation
+                                        }}
+                                    </p>
+                                </div>
+                            </article>
+                        </div>
+
+                        <details class="group p-5 sm:p-6">
+                            <summary
+                                class="flex cursor-pointer list-none items-center justify-between gap-4 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+                            >
+                                <span>
+                                    <span class="block text-sm font-semibold">
+                                        Explore the supporting data
+                                    </span>
+                                    <span
+                                        class="mt-1 block text-xs text-muted-foreground"
+                                    >
+                                        Landing pages, search queries, and
+                                        detailed performance metrics
+                                    </span>
+                                </span>
+                                <span
+                                    class="flex size-7 shrink-0 items-center justify-center rounded-full border border-border text-sm text-muted-foreground transition-transform group-open:rotate-45"
+                                    aria-hidden="true"
+                                >
+                                    +
+                                </span>
+                            </summary>
+
+                            <div class="mt-5 border-t border-border/70 pt-5">
+                                <div
+                                    class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div>
+                                        <h3 class="text-sm font-semibold">
+                                            Supporting data
+                                        </h3>
+                                        <p
+                                            class="mt-1 text-xs text-muted-foreground"
+                                        >
+                                            Use this to investigate a specific
+                                            page or query.
+                                        </p>
+                                    </div>
+                                    <div
+                                        class="grid grid-cols-2 rounded-xl bg-muted/60 p-1"
+                                        role="tablist"
+                                    >
+                                        <button
+                                            v-for="tab in [
+                                                {
+                                                    id: 'landingPages',
+                                                    label: 'Landing pages',
+                                                },
+                                                {
+                                                    id: 'queries',
+                                                    label: 'Queries',
+                                                },
+                                            ] as const"
+                                            :key="tab.id"
+                                            type="button"
+                                            role="tab"
+                                            class="rounded-lg px-4 py-1.5 text-xs font-medium transition-colors"
+                                            :class="
+                                                activeSearchTab === tab.id
+                                                    ? 'bg-card text-primary shadow-xs'
+                                                    : 'text-muted-foreground hover:text-foreground'
+                                            "
+                                            :aria-selected="
+                                                activeSearchTab === tab.id
+                                            "
+                                            @click="activeSearchTab = tab.id"
+                                        >
+                                            {{ tab.label }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <template
+                                    v-if="activeSearchTab === 'landingPages'"
+                                >
+                                    <div class="mt-4 overflow-x-auto">
+                                        <table
+                                            class="w-full min-w-[760px] text-left"
+                                        >
+                                            <thead>
+                                                <tr
+                                                    class="border-b border-border/70 text-[10px] tracking-wider text-muted-foreground uppercase"
+                                                >
+                                                    <th
+                                                        class="pb-2 font-medium"
+                                                    >
+                                                        Landing page
+                                                    </th>
+                                                    <th
+                                                        class="pb-2 text-right font-medium"
+                                                    >
+                                                        Impressions
+                                                    </th>
+                                                    <th
+                                                        class="pb-2 text-right font-medium"
+                                                    >
+                                                        Clicks
+                                                    </th>
+                                                    <th
+                                                        class="pb-2 text-right font-medium"
+                                                    >
+                                                        Visits
+                                                    </th>
+                                                    <th
+                                                        class="pb-2 text-right font-medium"
+                                                    >
+                                                        Conversions
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr
+                                                    v-for="landingPage in searchPerformance.landingPages ??
+                                                    []"
+                                                    :key="landingPage.path"
+                                                    class="cursor-pointer border-b border-border/50 last:border-0 hover:bg-muted/30"
+                                                    @click="
+                                                        selectedLandingPagePath =
+                                                            landingPage.path
+                                                    "
+                                                >
+                                                    <td
+                                                        class="py-3 pr-4 font-mono text-xs"
+                                                    >
+                                                        {{ landingPage.path }}
+                                                    </td>
+                                                    <td
+                                                        class="py-3 text-right text-xs tabular-nums"
+                                                    >
+                                                        {{
+                                                            formatNumber(
+                                                                landingPage.impressions,
+                                                            )
+                                                        }}
+                                                    </td>
+                                                    <td
+                                                        class="py-3 text-right text-xs tabular-nums"
+                                                    >
+                                                        {{
+                                                            formatNumber(
+                                                                landingPage.clicks,
+                                                            )
+                                                        }}
+                                                    </td>
+                                                    <td
+                                                        class="py-3 text-right text-xs tabular-nums"
+                                                    >
+                                                        {{
+                                                            formatNumber(
+                                                                landingPage.visits,
+                                                            )
+                                                        }}
+                                                    </td>
+                                                    <td
+                                                        class="py-3 text-right text-xs tabular-nums"
+                                                    >
+                                                        {{
+                                                            formatNumber(
+                                                                landingPage.conversions,
+                                                            )
+                                                        }}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div
+                                        v-if="selectedLandingPage"
+                                        class="mt-4 rounded-xl border border-border/80 bg-muted/20 p-4"
+                                    >
+                                        <p class="text-xs font-semibold">
+                                            Queries leading to
+                                            {{ selectedLandingPage.path }}
+                                        </p>
+                                        <p
+                                            class="mt-1 text-[10px] text-muted-foreground"
+                                        >
+                                            Aggregate correlation, not
+                                            visitor-level attribution
+                                        </p>
+                                        <div
+                                            v-if="
+                                                selectedLandingPage.topQueries
+                                                    .length
+                                            "
+                                            class="mt-3 grid gap-2 md:grid-cols-2"
+                                        >
+                                            <div
+                                                v-for="query in selectedLandingPage.topQueries"
+                                                :key="query.query"
+                                                class="rounded-lg bg-card px-3 py-2 text-xs"
+                                            >
+                                                {{ query.query }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <div v-else class="mt-4 grid gap-2">
+                                    <div
+                                        v-for="query in searchPerformance.queries ??
+                                        []"
+                                        :key="query.label"
+                                        class="flex items-center justify-between gap-4 rounded-lg border border-border/70 px-3 py-2"
+                                    >
+                                        <span
+                                            class="truncate font-mono text-xs"
+                                        >
+                                            {{ query.label }}
+                                        </span>
+                                        <span
+                                            class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                        >
+                                            {{ formatNumber(query.clicks) }}
+                                            clicks
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+                    </Card>
+
+                    <Card
+                        v-else
+                        class="rounded-2xl border-border/80 p-6 text-center shadow-xs"
+                    >
+                        <Search class="mx-auto size-5 text-muted-foreground" />
+                        <h2 class="mt-3 font-semibold">
+                            Search data is being prepared
+                        </h2>
+                        <p class="mt-1 text-sm text-muted-foreground">
+                            The first import can take a few minutes. Existing
+                            data remains visible if Google asks you to
+                            reconnect.
+                        </p>
+                    </Card>
+                </section>
+
+                <template #fallback>
+                    <Card
+                        class="h-72 animate-pulse rounded-2xl border-border/80 bg-muted/30 shadow-xs"
+                        aria-label="Loading organic search performance"
+                    />
+                </template>
+            </Deferred>
 
             <section
                 class="grid gap-4 lg:grid-cols-2"

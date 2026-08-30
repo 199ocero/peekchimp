@@ -6,6 +6,14 @@ return [
     'ingestion_max_events' => 10,
     'session_timeout_minutes' => 30,
 
+    'search_console' => [
+        'backfill_days' => 90,
+        'resync_days' => 7,
+        'detail_row_limit' => 1000,
+        'connect_timeout_seconds' => 5,
+        'request_timeout_seconds' => 20,
+    ],
+
     'rollups' => [
         'enabled' => (bool) env('PEEKCHIMP_ANALYTICS_ROLLUPS', true),
         'closed_after_minutes' => 60,

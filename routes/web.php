@@ -11,6 +11,8 @@ use App\Http\Controllers\InsightActionController;
 use App\Http\Controllers\InvitationAcceptanceController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PublicDashboardController;
+use App\Http\Controllers\SearchConsoleConnectionController;
+use App\Http\Controllers\SearchConsoleOAuthController;
 use App\Http\Controllers\WebsiteController;
 use App\Http\Controllers\WebsiteSettingsController;
 use App\Http\Controllers\WebsiteSharingController;
@@ -43,6 +45,21 @@ Route::middleware('auth')->group(function () {
 });
 
 Route::middleware(['auth', 'verified', 'website.configured'])->group(function () {
+    Route::get('websites/{project}/search-console/connect', [SearchConsoleOAuthController::class, 'connect'])
+        ->middleware('throttle:10,1')
+        ->name('websites.search-console.connect');
+    Route::get('integrations/google-search-console/callback', [SearchConsoleOAuthController::class, 'callback'])
+        ->middleware('throttle:10,1')
+        ->name('google-search-console.callback');
+    Route::post('websites/{project}/search-console', [SearchConsoleConnectionController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('websites.search-console.store');
+    Route::post('websites/{project}/search-console/sync', [SearchConsoleConnectionController::class, 'sync'])
+        ->middleware('throttle:10,1')
+        ->name('websites.search-console.sync');
+    Route::delete('websites/{project}/search-console', [SearchConsoleConnectionController::class, 'destroy'])
+        ->middleware('throttle:10,1')
+        ->name('websites.search-console.destroy');
     Route::get('websites/{project}/settings', [WebsiteSettingsController::class, 'edit'])
         ->name('websites.settings.edit');
     Route::patch('websites/{project}/settings', [WebsiteSettingsController::class, 'update'])

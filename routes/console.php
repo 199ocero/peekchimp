@@ -2,7 +2,9 @@
 
 use App\Jobs\EvaluateInsightOutcomes;
 use App\Jobs\RunAiVisibilityScan;
+use App\Jobs\StartSearchConsoleSync;
 use App\Models\Project;
+use App\Models\SearchConsoleConnection;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -28,6 +30,12 @@ Schedule::call(function (): void {
             RunAiVisibilityScan::dispatch($project, $scan);
         });
 })->weeklyOn(1, '04:00')->name('ai-visibility-scan')->withoutOverlapping(30)->onOneServer();
+Schedule::call(function (): void {
+    SearchConsoleConnection::query()
+        ->whereIn('status', ['connected', 'error'])
+        ->cursor()
+        ->each(fn (SearchConsoleConnection $connection) => StartSearchConsoleSync::dispatch($connection->getKey()));
+})->dailyAt('04:30')->name('search-console-sync')->withoutOverlapping(30)->onOneServer();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

@@ -35,4 +35,18 @@ return [
         ],
     ],
 
+    'google_search_console' => [
+        'client_id' => env('GOOGLE_SEARCH_CONSOLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET'),
+        'redirect_uri' => env(
+            'GOOGLE_SEARCH_CONSOLE_REDIRECT_URI',
+            rtrim((string) env('APP_URL'), '/').'/integrations/google-search-console/callback',
+        ),
+        'authorization_url' => 'https://accounts.google.com/o/oauth2/v2/auth',
+        'token_url' => 'https://oauth2.googleapis.com/token',
+        'revoke_url' => 'https://oauth2.googleapis.com/revoke',
+        'api_url' => 'https://www.googleapis.com/webmasters/v3',
+        'scope' => 'https://www.googleapis.com/auth/webmasters.readonly',
+    ],
+
 ];

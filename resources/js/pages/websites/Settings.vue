@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     Check,
     Clipboard,
@@ -7,8 +7,11 @@ import {
     ExternalLink,
     Globe2,
     KeyRound,
+    RefreshCw,
     RotateCcw,
+    Search,
     ShieldCheck,
+    Unplug,
 } from '@lucide/vue';
 import { useClipboard } from '@vueuse/core';
 import { computed } from 'vue';
@@ -19,6 +22,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
+import {
+    connect as connectSearchConsole,
+    destroy as destroySearchConsole,
+    store as storeSearchConsole,
+    sync as syncSearchConsole,
+} from '@/routes/websites/search-console';
 import { update as updateWebsiteSettings } from '@/routes/websites/settings';
 import {
     rotate as rotateWebsiteSharing,
@@ -44,6 +53,23 @@ const props = defineProps<{
         url: string | null;
         sections: PublicSection[];
     };
+    searchConsole: {
+        connection: {
+            propertySiteUrl: string;
+            propertyType: string;
+            permissionLevel: string;
+            status: string;
+            dataThrough: string | null;
+            lastSyncedAt: string | null;
+            lastError: string | null;
+        } | null;
+        candidates: Array<{
+            siteUrl: string;
+            propertyType: string;
+            permissionLevel: string;
+        }>;
+        canManage: boolean;
+    };
 }>();
 
 const generalForm = useForm({
@@ -54,6 +80,15 @@ const sharingForm = useForm({
     enabled: props.publicSharing.enabled,
     sections: [...props.publicSharing.sections] as PublicSection[],
 });
+const propertyForm = useForm({
+    site_url: props.searchConsole.candidates[0]?.siteUrl ?? '',
+});
+const page = usePage();
+const searchConsoleError = computed(() =>
+    typeof page.props.errors?.search_console === 'string'
+        ? page.props.errors.search_console
+        : '',
+);
 const { copy: copyText, copied } = useClipboard({ copiedDuring: 1600 });
 
 const installationSnippet = computed(
@@ -130,6 +165,47 @@ function rotateLink(): void {
     });
 }
 
+function selectSearchConsoleProperty(): void {
+    propertyForm.submit(storeSearchConsole(props.website.id), {
+        preserveScroll: true,
+    });
+}
+
+function syncGoogleSearchConsole(): void {
+    router.post(
+        syncSearchConsole(props.website.id).url,
+        {},
+        {
+            preserveScroll: true,
+        },
+    );
+}
+
+function disconnectGoogleSearchConsole(): void {
+    if (
+        !window.confirm(
+            'Disconnect Google Search Console and delete all imported search data?',
+        )
+    ) {
+        return;
+    }
+
+    router.delete(destroySearchConsole(props.website.id).url, {
+        preserveScroll: true,
+    });
+}
+
+function formatTimestamp(value: string | null): string {
+    if (!value) {
+        return 'Not synced yet';
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    }).format(new Date(value));
+}
+
 async function copy(value: string): Promise<void> {
     await copyText(value);
 }
@@ -172,6 +248,7 @@ async function copy(value: string): Promise<void> {
                     v-for="item in [
                         ['general', 'General'],
                         ['installation', 'Installation'],
+                        ['search-console', 'Search Console'],
                         ['sharing', 'Public sharing'],
                     ]"
                     :key="item[0]"
@@ -370,6 +447,217 @@ async function copy(value: string): Promise<void> {
                                 Place this line before the closing
                                 <code class="font-mono">&lt;/head&gt;</code> tag
                                 on {{ website.domain ?? 'your website' }}.
+                            </p>
+                        </div>
+                    </Card>
+                </section>
+
+                <section id="search-console" class="scroll-mt-6">
+                    <Card class="gap-0 p-5 sm:p-6">
+                        <div class="flex items-start gap-3">
+                            <span
+                                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
+                                aria-hidden="true"
+                            >
+                                <Search class="size-4" />
+                            </span>
+                            <div>
+                                <h2 class="font-medium">
+                                    Google Search Console
+                                </h2>
+                                <p class="mt-1 text-sm text-muted-foreground">
+                                    Add organic search clicks, impressions,
+                                    rankings, queries, and landing pages to your
+                                    analytics.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="searchConsoleError"
+                            class="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+                            role="alert"
+                        >
+                            {{ searchConsoleError }}
+                        </div>
+
+                        <form
+                            v-if="searchConsole.candidates.length > 1"
+                            class="mt-6 rounded-xl border border-border bg-muted/20 p-4"
+                            @submit.prevent="selectSearchConsoleProperty"
+                        >
+                            <Label for="search-console-property">
+                                Choose a matching property
+                            </Label>
+                            <p class="mt-1 text-xs text-muted-foreground">
+                                Each option exactly matches
+                                {{ website.domain }}. Pick the property you use
+                                for reporting.
+                            </p>
+                            <select
+                                id="search-console-property"
+                                v-model="propertyForm.site_url"
+                                class="select-with-chevron mt-3 h-9 w-full rounded-md border border-input bg-background text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                            >
+                                <option
+                                    v-for="candidate in searchConsole.candidates"
+                                    :key="candidate.siteUrl"
+                                    :value="candidate.siteUrl"
+                                >
+                                    {{ candidate.siteUrl }} ·
+                                    {{ candidate.permissionLevel }}
+                                </option>
+                            </select>
+                            <InputError
+                                class="mt-2"
+                                :message="propertyForm.errors.site_url"
+                            />
+                            <div class="mt-4 flex justify-end">
+                                <Button
+                                    type="submit"
+                                    :disabled="propertyForm.processing"
+                                >
+                                    {{
+                                        propertyForm.processing
+                                            ? 'Connecting…'
+                                            : 'Use this property'
+                                    }}
+                                </Button>
+                            </div>
+                        </form>
+
+                        <div
+                            v-else-if="searchConsole.connection"
+                            class="mt-6 space-y-4"
+                        >
+                            <div
+                                class="rounded-xl border border-border bg-muted/20 p-4"
+                            >
+                                <div
+                                    class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+                                >
+                                    <div class="min-w-0">
+                                        <div
+                                            class="flex flex-wrap items-center gap-2"
+                                        >
+                                            <p
+                                                class="truncate font-mono text-xs font-medium"
+                                            >
+                                                {{
+                                                    searchConsole.connection
+                                                        .propertySiteUrl
+                                                }}
+                                            </p>
+                                            <span
+                                                class="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium capitalize"
+                                            >
+                                                {{
+                                                    searchConsole.connection.status.replace(
+                                                        '_',
+                                                        ' ',
+                                                    )
+                                                }}
+                                            </span>
+                                        </div>
+                                        <p
+                                            class="mt-2 text-xs text-muted-foreground"
+                                        >
+                                            Data through
+                                            {{
+                                                searchConsole.connection
+                                                    .dataThrough ??
+                                                'the first completed import'
+                                            }}
+                                            · Last sync
+                                            {{
+                                                formatTimestamp(
+                                                    searchConsole.connection
+                                                        .lastSyncedAt,
+                                                )
+                                            }}
+                                        </p>
+                                    </div>
+                                    <ShieldCheck
+                                        class="size-5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                    />
+                                </div>
+                                <p
+                                    v-if="searchConsole.connection.lastError"
+                                    class="mt-3 text-xs text-destructive"
+                                >
+                                    {{ searchConsole.connection.lastError }}
+                                </p>
+                            </div>
+
+                            <div
+                                v-if="searchConsole.canManage"
+                                class="flex flex-wrap justify-end gap-2"
+                            >
+                                <Button
+                                    v-if="
+                                        searchConsole.connection.status ===
+                                        'reconnect_required'
+                                    "
+                                    as-child
+                                >
+                                    <Link
+                                        :href="connectSearchConsole(website.id)"
+                                    >
+                                        Reconnect Google
+                                    </Link>
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    :disabled="
+                                        searchConsole.connection.status ===
+                                        'syncing'
+                                    "
+                                    @click="syncGoogleSearchConsole"
+                                >
+                                    <RefreshCw
+                                        :class="[
+                                            'size-3.5',
+                                            searchConsole.connection.status ===
+                                                'syncing' && 'animate-spin',
+                                        ]"
+                                    />
+                                    Sync now
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    class="text-destructive hover:text-destructive"
+                                    @click="disconnectGoogleSearchConsole"
+                                >
+                                    <Unplug class="size-3.5" />
+                                    Disconnect
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div v-else class="mt-6">
+                            <p class="text-sm text-muted-foreground">
+                                Peekchimp only accepts properties whose host
+                                exactly matches the verified domain above.
+                                Google data usually trails live traffic by a few
+                                days.
+                            </p>
+                            <Button
+                                v-if="searchConsole.canManage"
+                                as-child
+                                class="mt-4"
+                            >
+                                <Link :href="connectSearchConsole(website.id)">
+                                    <Search class="size-3.5" />
+                                    Connect Google Search Console
+                                </Link>
+                            </Button>
+                            <p
+                                v-else
+                                class="mt-3 text-xs text-muted-foreground"
+                            >
+                                A workspace admin can connect this integration.
                             </p>
                         </div>
                     </Card>

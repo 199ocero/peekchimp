@@ -20,6 +20,8 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/pages/Dashboard.vue | .ai/rules/pages.md |
 | resources/** | .ai/rules/resources.md |
 | routes/** | .ai/rules/routes.md |
+| app/{Http/Controllers,Jobs,Services/SearchConsole}/** | .ai/rules/search-console.md |
 | app/Services/Analytics/EventNormalizer.php, app/Services/Analytics/** | .ai/rules/services-analytics.md |
+| app/Services/SearchConsole/** | .ai/rules/services-search-console.md |
 | app/Models/User.php,app/Policies/ProjectPolicy.php,app/Services/Websites/** | .ai/rules/services-websites.md |
 | app/Services/Websites/** | .ai/rules/websites.md |

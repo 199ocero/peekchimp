@@ -144,8 +144,8 @@ test('app header includes the reference navigation and compact account controls'
         ->toContain('bg-sidebar-border/80')
         ->toContain('<AppearanceMenu />')
         ->toContain("label: 'Overview'")
-        ->toContain("label: 'AI visibility'")
         ->toContain("label: 'Goals'")
+        ->not->toContain("label: 'AI visibility'")
         ->not->toContain('mainNavItems')
         ->not->toContain('NavigationMenu');
 });

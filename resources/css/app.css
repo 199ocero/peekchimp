@@ -219,6 +219,29 @@
     --sidebar: #0d0f10;
 }
 
+#app:empty {
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    background: var(--background);
+}
+
+#app:empty::before {
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 9999px;
+    content: '';
+    animation: peekchimp-loading 0.7s linear infinite;
+}
+
+@keyframes peekchimp-loading {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 @layer base {
     * {
         @apply border-border outline-ring/50;

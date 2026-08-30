@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { computed, watch } from 'vue';
+import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -7,8 +9,23 @@ import { Label } from '@/components/ui/label';
 import { edit as profile } from '@/routes/profile';
 import { update as updateAi, test as testAi } from '@/routes/settings/ai';
 
+type ModelOption = {
+    value: string;
+    label: string;
+    tier: string;
+    description: string;
+};
+
+type ProviderOption = {
+    value: string;
+    label: string;
+    defaultModel: string;
+    modelDocsUrl: string;
+    models: ModelOption[];
+};
+
 const props = defineProps<{
-    providers: string[];
+    providers: ProviderOption[];
     settings: {
         provider: string;
         model: string | null;
@@ -18,13 +35,44 @@ const props = defineProps<{
         hasApiKey: boolean;
     } | null;
 }>();
+
+const initialProvider = props.providers.some(
+    (provider) => provider.value === props.settings?.provider,
+)
+    ? (props.settings?.provider ?? 'openai')
+    : (props.providers[0]?.value ?? 'openai');
+const initialProviderOption = props.providers.find(
+    (provider) => provider.value === initialProvider,
+);
+const initialModel = initialProviderOption?.models.some(
+    (model) => model.value === props.settings?.model,
+)
+    ? (props.settings?.model ?? initialProviderOption.defaultModel)
+    : (initialProviderOption?.defaultModel ?? '');
+
 const form = useForm({
-    provider: props.settings?.provider || props.providers[0] || 'openai',
-    model: props.settings?.model || '',
+    provider: initialProvider,
+    model: initialModel,
     api_key: '',
-    base_url: props.settings?.baseUrl || '',
+    base_url: null as null,
     is_enabled: props.settings?.isEnabled || false,
 });
+
+const selectedProvider = computed(() =>
+    props.providers.find((provider) => provider.value === form.provider),
+);
+const selectedModel = computed(() =>
+    selectedProvider.value?.models.find((model) => model.value === form.model),
+);
+
+watch(
+    () => form.provider,
+    () => {
+        form.model = selectedProvider.value?.defaultModel ?? '';
+        form.clearErrors('provider', 'model');
+    },
+);
+
 function save(): void {
     form.patch(updateAi().url, { preserveScroll: true });
 }
@@ -55,29 +103,58 @@ function test(): void {
         <Card class="p-5"
             ><form class="space-y-5" @submit.prevent="save">
                 <div class="grid gap-2">
-                    <Label>Provider</Label
-                    ><select
+                    <Label for="provider">Provider</Label>
+                    <select
+                        id="provider"
                         v-model="form.provider"
-                        class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                        class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     >
                         <option
                             v-for="provider in providers"
-                            :key="provider"
-                            :value="provider"
+                            :key="provider.value"
+                            :value="provider.value"
                         >
-                            {{ provider }}
+                            {{ provider.label }}
                         </option>
                     </select>
+                    <InputError :message="form.errors.provider" />
                 </div>
                 <div class="grid gap-2">
-                    <Label>Model (optional)</Label
-                    ><Input
+                    <div class="flex items-center justify-between gap-3">
+                        <Label for="model">Model</Label>
+                        <a
+                            v-if="selectedProvider"
+                            :href="selectedProvider.modelDocsUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                        >
+                            View model docs
+                        </a>
+                    </div>
+                    <select
+                        id="model"
                         v-model="form.model"
-                        placeholder="Use provider default"
-                    />
+                        class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                        <option
+                            v-for="model in selectedProvider?.models"
+                            :key="model.value"
+                            :value="model.value"
+                        >
+                            {{ model.label }} · {{ model.tier }}
+                        </option>
+                    </select>
+                    <p
+                        v-if="selectedModel"
+                        class="text-sm leading-5 text-muted-foreground"
+                    >
+                        {{ selectedModel.description }}
+                    </p>
+                    <InputError :message="form.errors.model" />
                 </div>
                 <div class="grid gap-2">
-                    <Label
+                    <Label for="api-key"
                         >API key
                         {{
                             settings?.hasApiKey
@@ -85,23 +162,18 @@ function test(): void {
                                 : ''
                         }}</Label
                     ><Input
+                        id="api-key"
                         v-model="form.api_key"
                         type="password"
                         autocomplete="off"
                     />
-                </div>
-                <div class="grid gap-2">
-                    <Label>Base URL (optional)</Label
-                    ><Input
-                        v-model="form.base_url"
-                        placeholder="Provider default"
-                    />
+                    <InputError :message="form.errors.api_key" />
                 </div>
                 <label class="flex items-center gap-2 text-sm"
                     ><input v-model="form.is_enabled" type="checkbox" /> Enable
                     AI explanations</label
                 >
-                <div class="flex gap-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     <Button :disabled="form.processing">Save settings</Button
                     ><Button
                         type="button"

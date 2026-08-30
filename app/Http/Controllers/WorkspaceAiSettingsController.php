@@ -22,7 +22,7 @@ class WorkspaceAiSettingsController extends Controller
         $setting = $user->workspaceAiSetting()->first();
 
         return Inertia::render('settings/Ai', [
-            'providers' => $providers->providers(),
+            'providers' => $providers->catalog(),
             'settings' => $setting === null ? null : [
                 'provider' => $setting->provider,
                 'model' => $setting->model,

@@ -28,9 +28,11 @@ class UpdateWorkspaceAiSettingsRequest extends FormRequest
      */
     public function rules(): array
     {
+        $providers = app(AiProviderRegistry::class);
+
         return [
-            'provider' => ['required', 'string', Rule::in(app(AiProviderRegistry::class)->providers())],
-            'model' => ['nullable', 'string', 'max:120'],
+            'provider' => ['required', 'string', Rule::in($providers->providers())],
+            'model' => ['required', 'string', 'max:120', Rule::in($providers->modelsFor($this->string('provider')->toString()))],
             'api_key' => ['nullable', 'string', 'max:500'],
             'base_url' => ['nullable', 'url', 'max:255'],
             'is_enabled' => ['sometimes', 'boolean'],

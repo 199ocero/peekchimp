@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\AiTrafficController;
-use App\Http\Controllers\AiVisibilityController;
+use App\Http\Controllers\ChatController;
+use App\Http\Controllers\ChatConversationController;
+use App\Http\Controllers\ChatMessageController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FunnelController;
 use App\Http\Controllers\GenerateDashboardAiInsightsController;
@@ -14,6 +16,7 @@ use App\Http\Controllers\PublicDashboardController;
 use App\Http\Controllers\SearchConsoleConnectionController;
 use App\Http\Controllers\SearchConsoleOAuthController;
 use App\Http\Controllers\WebsiteController;
+use App\Http\Controllers\WebsiteCrawlController;
 use App\Http\Controllers\WebsiteSettingsController;
 use App\Http\Controllers\WebsiteSharingController;
 use App\Http\Middleware\PublicShareHeaders;
@@ -64,6 +67,8 @@ Route::middleware(['auth', 'verified', 'website.configured'])->group(function ()
         ->name('websites.settings.edit');
     Route::patch('websites/{project}/settings', [WebsiteSettingsController::class, 'update'])
         ->name('websites.settings.update');
+    Route::post('websites/{project}/crawl', WebsiteCrawlController::class)
+        ->name('websites.crawl.store');
     Route::patch('websites/{project}/sharing', [WebsiteSharingController::class, 'update'])
         ->name('websites.sharing.update');
     Route::post('websites/{project}/sharing/rotate', [WebsiteSharingController::class, 'rotate'])
@@ -95,11 +100,23 @@ Route::middleware(['auth', 'verified', 'website.configured'])->group(function ()
 });
 
 Route::middleware(['auth', 'verified', 'website.configured'])->group(function () {
+    Route::get('chat', [ChatController::class, 'index'])->name('chat.index');
+    Route::get('chat/{conversation}', [ChatController::class, 'show'])
+        ->whereUuid('conversation')
+        ->name('chat.show');
+    Route::post('chat/messages', [ChatMessageController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('chat.messages.store');
+    Route::patch('chat/{conversation}', [ChatConversationController::class, 'update'])
+        ->whereUuid('conversation')
+        ->name('chat.update');
+    Route::delete('chat/{conversation}', [ChatConversationController::class, 'destroy'])
+        ->whereUuid('conversation')
+        ->name('chat.destroy');
+
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::post('dashboard/ai-insights', GenerateDashboardAiInsightsController::class)->name('dashboard.ai-insights.generate');
     Route::get('websites/{project}/ai-traffic', AiTrafficController::class)->name('websites.ai-traffic');
-    Route::get('websites/{project}/ai-visibility', [AiVisibilityController::class, 'show'])->name('websites.ai-visibility.show');
-    Route::post('websites/{project}/ai-visibility/scan', [AiVisibilityController::class, 'scan'])->name('websites.ai-visibility.scan');
     Route::post('insights/{insight}/actions', [InsightActionController::class, 'store'])->name('insights.actions.store');
 });
 

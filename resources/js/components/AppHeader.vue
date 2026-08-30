@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
+import { MessageCircle } from '@lucide/vue';
 import { computed } from 'vue';
 import AppearanceMenu from '@/components/AppearanceMenu.vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
@@ -15,7 +16,7 @@ import UserMenuContent from '@/components/UserMenuContent.vue';
 import WebsiteSwitcher from '@/components/WebsiteSwitcher.vue';
 import { getInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
-import { show as aiVisibilityShow } from '@/routes/websites/ai-visibility';
+import { index as chatIndex } from '@/routes/chat';
 import { index as goalsIndex } from '@/routes/websites/goals';
 import type { BreadcrumbItem, WebsiteSwitcherData } from '@/types';
 
@@ -46,14 +47,14 @@ const navigationItems = computed(() => {
             active: page.url.startsWith('/dashboard'),
         },
         {
-            label: 'AI visibility',
-            href: aiVisibilityShow(currentWebsite.value.id).url,
-            active: page.url.includes('/ai-visibility'),
-        },
-        {
             label: 'Goals',
             href: goalsIndex(currentWebsite.value.id).url,
             active: page.url.includes('/goals'),
+        },
+        {
+            label: 'Chat',
+            href: chatIndex().url,
+            active: page.url.startsWith('/chat'),
         },
     ];
 });
@@ -103,6 +104,18 @@ const navigationItems = computed(() => {
                 </nav>
 
                 <div class="ml-auto flex items-center gap-1">
+                    <Button
+                        v-if="currentWebsite"
+                        as-child
+                        variant="ghost"
+                        size="icon"
+                        class="md:hidden"
+                    >
+                        <Link :href="chatIndex()" aria-label="Open AI chat">
+                            <MessageCircle class="size-4" />
+                        </Link>
+                    </Button>
+
                     <AppearanceMenu />
 
                     <DropdownMenu>

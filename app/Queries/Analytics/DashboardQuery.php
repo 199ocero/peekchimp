@@ -5,14 +5,11 @@ namespace App\Queries\Analytics;
 use App\Models\AnalyticsEvent;
 use App\Models\AnalyticsSession;
 use App\Models\Project;
-use App\Services\Analytics\AiInsightGenerationCoordinator;
 use App\Services\Analytics\AiReferralClassifier;
 use App\Services\Analytics\AnalyticsRollupReader;
-use App\Services\Analytics\DashboardInsightBuilder;
 use App\Services\Analytics\FunnelAnalyticsService;
 use App\Services\Analytics\GoalAnalyticsService;
 use App\Services\Analytics\ImportantActionAnalyticsService;
-use App\Services\Analytics\InsightGenerationService;
 use App\Services\Analytics\SourceGrouping;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,10 +20,7 @@ class DashboardQuery
 {
     public function __construct(
         private readonly AiReferralClassifier $aiReferralClassifier,
-        private readonly AiInsightGenerationCoordinator $aiInsights,
         private readonly SourceGrouping $sourceGrouping,
-        private readonly DashboardInsightBuilder $dashboardInsightBuilder,
-        private readonly InsightGenerationService $insightGenerationService,
         private readonly GoalAnalyticsService $goalAnalyticsService,
         private readonly ImportantActionAnalyticsService $importantActionAnalyticsService,
         private readonly FunnelAnalyticsService $funnelAnalyticsService,
@@ -40,8 +34,6 @@ class DashboardQuery
     public function run(
         Project $project,
         array $filters = [],
-        bool $withInsights = true,
-        bool $queueAiInsights = true,
     ): array {
         [$from, $to, $rangeKey, $rangeLabel] = $this->range($project, $filters);
         $normalizedFilters = array_filter([
@@ -53,12 +45,9 @@ class DashboardQuery
             'utm_campaign' => $filters['utm_campaign'] ?? null,
         ]);
         $cacheBust = (string) ($filters['refresh'] ?? '');
-        $aiInsightsVersion = $withInsights
-            ? (string) Cache::get('dashboard:ai-insights-version:'.$project->getKey(), 'initial')
-            : 'public';
-        $cacheKey = 'dashboard:v9:'.$project->getKey().':'.$rangeKey.':'.$from->timestamp.':'.$to->timestamp.':'.sha1((string) json_encode($normalizedFilters)).':'.($withInsights ? 'insights' : 'public').':'.$aiInsightsVersion.':'.$cacheBust;
+        $cacheKey = 'dashboard:v10:'.$project->getKey().':'.$rangeKey.':'.$from->timestamp.':'.$to->timestamp.':'.sha1((string) json_encode($normalizedFilters)).':'.$cacheBust;
 
-        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($project, $from, $to, $rangeKey, $rangeLabel, $normalizedFilters, $withInsights, $queueAiInsights): array {
+        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($project, $from, $to, $rangeKey, $rangeLabel, $normalizedFilters): array {
             $activeAt = CarbonImmutable::now('UTC');
             $pageviews = $this->events($project, $from, $to, $normalizedFilters)->where('event_name', 'page_view')->count();
             $visitors = $this->events($project, $from, $to, $normalizedFilters)
@@ -71,8 +60,6 @@ class DashboardQuery
             $averageDuration = $sessionSummary['averageDuration'];
             $singlePageRate = $sessions > 0 ? round(($bounces / $sessions) * 100, 1) : 0;
             $conversionOverview = $this->conversionOverview($project, $from, $to, $normalizedFilters);
-            // Keep the legacy referrer series for compatibility; the actionable
-            // source grouping below uses session visits rather than page loads.
             $referrers = $this->breakdown($project, $from, $to, $normalizedFilters, 'referrer_host', 'Direct');
             $timeseries = $this->timeseries($project, $from, $to, $normalizedFilters, $rangeKey);
             $metrics = [
@@ -86,28 +73,7 @@ class DashboardQuery
                 'conversions' => $conversionOverview['conversions'],
                 'conversionRate' => $conversionOverview['conversionRate'],
             ];
-
             [$previousFrom, $previousTo] = $this->previousRange($project, $from, $to, $activeAt);
-            $hasComparisonData = $this->hasTraffic($project, $previousFrom, $previousTo, $normalizedFilters);
-            $actionableInsights = [];
-            if ($withInsights && $hasComparisonData) {
-                $actionableInsights = $this->insightGenerationService->generate(
-                    $project,
-                    $from,
-                    $to,
-                    $normalizedFilters,
-                    $previousFrom,
-                    $previousTo,
-                );
-                if ($queueAiInsights && $actionableInsights !== []) {
-                    $this->aiInsights->request(
-                        $project,
-                        $actionableInsights,
-                        $from->toIso8601String(),
-                        $to->toIso8601String(),
-                    );
-                }
-            }
 
             return [
                 'range' => [
@@ -118,7 +84,7 @@ class DashboardQuery
                     'interval' => $this->usesHourlyBuckets($rangeKey) ? 'hour' : 'day',
                 ],
                 'comparison' => [
-                    'available' => $hasComparisonData,
+                    'available' => $this->hasTraffic($project, $previousFrom, $previousTo, $normalizedFilters),
                 ],
                 'metrics' => $metrics,
                 'metricTrends' => $this->metricTrends($project, $from, $to, $normalizedFilters, $rangeKey, $metrics, $timeseries, $activeAt),
@@ -137,9 +103,6 @@ class DashboardQuery
                 'utmSources' => $this->sessionBreakdown($project, $from, $to, $normalizedFilters, 'utm_source', 'None'),
                 'aiReferrals' => $this->aiReferrals($project, $from, $to, $normalizedFilters),
                 'aiTraffic' => $this->aiTraffic($project, $from, $to, $normalizedFilters),
-                'insights' => $this->dashboardInsightBuilder->build($sessions, $singlePageRate, $referrers, $hasComparisonData),
-                'whatChanged' => $actionableInsights,
-                'actionableInsights' => $actionableInsights,
                 'goals' => $conversionOverview['goals'],
                 'importantActions' => $this->importantActionAnalyticsService->summarize($project, $from, $to),
                 'funnels' => $project->funnels()->where('is_active', true)->with('steps')->get()->map(

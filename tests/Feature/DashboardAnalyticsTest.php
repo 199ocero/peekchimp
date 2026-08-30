@@ -32,10 +32,9 @@ test('dashboard reports persisted analytics metrics', function () {
         ->where('analytics.metrics.sessions', 2)
         ->where('analytics.metrics.activeVisitors', 2)
         ->where('analytics.metrics.bounceRate', 0)
-        ->where('analytics.comparison.available', false)
-        ->where('analytics.insights.0.type', 'comparison_pending')
-        ->where('analytics.insights.0.value', 2)
-        ->count('analytics.actionableInsights', 0));
+        ->missing('analytics.insights')
+        ->missing('analytics.actionableInsights')
+        ->missing('analytics.whatChanged'));
 });
 
 test('dashboard groups every selected-range visit by country', function () {
@@ -238,45 +237,6 @@ test('dashboard compares each top metric with its previous period', function () 
         ->where('analytics.metricTrends.conversions.change', 0)
         ->where('analytics.comparison.available', true)
         ->has('analytics.metricTrends.averageDuration.series', 24));
-});
-
-test('dashboard reports supported engagement and attribution insights', function () {
-    $user = User::factory()->create(['email_verified_at' => now()]);
-    $project = Project::factory()->create(['user_id' => $user->id]);
-    $project->domains()->create(['domain' => 'example.test', 'is_verified' => true]);
-
-    AnalyticsSession::factory()->count(14)->create([
-        'project_id' => $project->id,
-        'is_bounce' => true,
-    ]);
-    AnalyticsSession::factory()->count(6)->create([
-        'project_id' => $project->id,
-        'is_bounce' => false,
-    ]);
-    AnalyticsEvent::factory()->count(60)->create([
-        'project_id' => $project->id,
-        'event_name' => 'page_view',
-        'referrer_host' => null,
-    ]);
-    AnalyticsEvent::factory()->count(40)->create([
-        'project_id' => $project->id,
-        'event_name' => 'page_view',
-        'referrer_host' => 'google.com',
-    ]);
-    AnalyticsSession::factory()->create([
-        'project_id' => $project->id,
-        'started_at' => now()->subDays(8),
-        'last_seen_at' => now()->subDays(8),
-    ]);
-
-    $response = $this->actingAs($user)->get(route('dashboard'));
-
-    $response->assertOk();
-    $response->assertInertia(fn ($page) => $page
-        ->where('analytics.insights.0.type', 'high_single_page_rate')
-        ->where('analytics.insights.0.value', 70)
-        ->where('analytics.insights.1.type', 'unattributed_traffic')
-        ->where('analytics.insights.1.value', 60));
 });
 
 test('dashboard groups AI referral visits by provider', function () {

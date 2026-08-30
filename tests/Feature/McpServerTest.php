@@ -105,7 +105,7 @@ test('authenticated users can discover only their workspace websites', function 
         ->assertHasErrors(['not available']);
 });
 
-test('analytics tools return structured aggregate data without queuing insights', function () {
+test('analytics tools return structured aggregate data without legacy insights', function () {
     $user = User::factory()->withVerifiedWebsite()->create();
     $project = $user->projects()->sole();
 
@@ -121,6 +121,7 @@ test('analytics tools return structured aggregate data without queuing insights'
             ->has('data.metrics')
             ->has('data.timeseries')
             ->has('data.aiTraffic')
+            ->missing('data.insights')
             ->etc(),
         );
 });

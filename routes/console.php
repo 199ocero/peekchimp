@@ -1,6 +1,5 @@
 <?php
 
-use App\Jobs\EvaluateInsightOutcomes;
 use App\Jobs\RunAiVisibilityScan;
 use App\Jobs\StartSearchConsoleSync;
 use App\Models\Project;
@@ -17,9 +16,6 @@ Schedule::command('analytics:geoip:update')
     ->weeklyOn(1, '03:15')
     ->withoutOverlapping(30)
     ->onOneServer();
-Schedule::call(function (): void {
-    EvaluateInsightOutcomes::dispatch();
-})->dailyAt('05:00')->name('evaluate-insight-outcomes')->withoutOverlapping(30)->onOneServer();
 Schedule::call(function (): void {
     Project::query()
         ->where('is_active', true)

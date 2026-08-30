@@ -6,10 +6,8 @@ use App\Http\Controllers\ChatConversationController;
 use App\Http\Controllers\ChatMessageController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FunnelController;
-use App\Http\Controllers\GenerateDashboardAiInsightsController;
 use App\Http\Controllers\GoalController;
 use App\Http\Controllers\ImportantActionController;
-use App\Http\Controllers\InsightActionController;
 use App\Http\Controllers\InvitationAcceptanceController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PublicDashboardController;
@@ -115,9 +113,7 @@ Route::middleware(['auth', 'verified', 'website.configured'])->group(function ()
         ->name('chat.destroy');
 
     Route::get('dashboard', DashboardController::class)->name('dashboard');
-    Route::post('dashboard/ai-insights', GenerateDashboardAiInsightsController::class)->name('dashboard.ai-insights.generate');
     Route::get('websites/{project}/ai-traffic', AiTrafficController::class)->name('websites.ai-traffic');
-    Route::post('insights/{insight}/actions', [InsightActionController::class, 'store'])->name('insights.actions.store');
 });
 
 require __DIR__.'/settings.php';

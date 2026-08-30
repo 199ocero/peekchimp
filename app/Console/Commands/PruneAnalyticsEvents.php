@@ -19,10 +19,7 @@ class PruneAnalyticsEvents extends Command
         $sessions = DB::table('analytics_sessions')->where('last_seen_at', '<', $cutoff)->delete();
         $conversions = DB::table('goal_conversions')->where('occurred_at', '<', $cutoff)->delete();
         $rollups = DB::table('analytics_rollups')->where('bucket_start', '<', $cutoff)->delete();
-        $insights = DB::table('insights')->where('period_end', '<', $cutoff)->delete();
-        $aiRuns = DB::table('ai_insight_runs')->where('created_at', '<', $cutoff)->delete();
-
-        $this->info("Pruned {$events} events, {$sessions} sessions, {$conversions} conversions, {$rollups} rollups, {$insights} insights, and {$aiRuns} AI runs older than {$days} days.");
+        $this->info("Pruned {$events} events, {$sessions} sessions, {$conversions} conversions, and {$rollups} rollups older than {$days} days.");
 
         return self::SUCCESS;
     }

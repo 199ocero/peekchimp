@@ -44,12 +44,7 @@ class GetAnalyticsOverview extends Tool
             return $range;
         }
 
-        $analytics = $this->dashboardQuery->run(
-            $project,
-            $range['dashboardFilters'],
-            false,
-            false,
-        );
+        $analytics = $this->dashboardQuery->run($project, $range['dashboardFilters']);
 
         return Response::structured([
             'status' => 'ok',
@@ -71,7 +66,6 @@ class GetAnalyticsOverview extends Tool
                 'countryVisits' => $analytics['countryVisits'],
                 'aiReferrals' => $analytics['aiReferrals'],
                 'aiTraffic' => $analytics['aiTraffic'],
-                'insights' => $analytics['insights'],
             ],
         ]);
     }

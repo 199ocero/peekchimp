@@ -1,18 +1,14 @@
 <?php
 
-use App\Jobs\EvaluateInsightOutcomes;
 use App\Models\AnalyticsEvent;
 use App\Models\AnalyticsSession;
 use App\Models\Funnel;
 use App\Models\Goal;
-use App\Models\Insight;
-use App\Models\InsightActionAttempt;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Analytics\FunnelAnalyticsService;
 use App\Services\Analytics\GoalAnalyticsService;
 use App\Services\Analytics\GoalConversionService;
-use App\Services\Analytics\InsightOutcomeService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -89,49 +85,4 @@ test('dashboard exposes actionable outcome sections', function () {
         ->has('analytics.goals')
         ->has('analytics.importantActions')
         ->has('analytics.aiTraffic'));
-});
-
-test('insight actions are recorded and can dismiss an insight', function () {
-    $user = User::factory()->withVerifiedWebsite()->create();
-    $project = $user->projects()->sole();
-    $insight = Insight::factory()->for($project)->create();
-
-    $this->actingAs($user)
-        ->post(route('insights.actions.store', $insight), ['action' => 'mark_done'])
-        ->assertRedirect();
-
-    expect($insight->refresh()->dismissed_at)->not->toBeNull()
-        ->and($insight->actionAttempts()->count())->toBe(1);
-});
-
-test('scheduled outcome evaluation records observed movement after an action', function () {
-    $this->travelTo(CarbonImmutable::parse('2026-08-26 12:00:00', 'UTC'));
-
-    $user = User::factory()->withVerifiedWebsite()->create();
-    $project = $user->projects()->sole();
-    $insight = Insight::factory()->for($project)->create([
-        'metric' => 'visitors',
-        'period_start' => '2026-08-11 00:00:00',
-        'period_end' => '2026-08-17 23:59:59',
-    ]);
-    $attempt = InsightActionAttempt::factory()->for($insight)->for($user)->create([
-        'acted_at' => '2026-08-18 12:00:00',
-    ]);
-
-    AnalyticsEvent::factory()->for($project)->create([
-        'event_name' => 'page_view',
-        'visitor_id' => 'before-visitor',
-        'occurred_at' => '2026-08-12 12:00:00',
-    ]);
-    foreach (['after-one', 'after-two'] as $visitorId) {
-        AnalyticsEvent::factory()->for($project)->create([
-            'event_name' => 'page_view',
-            'visitor_id' => $visitorId,
-            'occurred_at' => '2026-08-19 12:00:00',
-        ]);
-    }
-
-    (new EvaluateInsightOutcomes)->handle(app(InsightOutcomeService::class));
-
-    expect($attempt->refresh()->outcome)->toBe('improved');
 });

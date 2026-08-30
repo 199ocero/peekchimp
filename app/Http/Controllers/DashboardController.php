@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Queries\Analytics\DashboardQuery;
-use App\Services\Analytics\AiInsightGenerationCoordinator;
 use App\Services\SearchConsole\SearchConsoleAnalyticsService;
 use App\Services\Websites\CurrentWebsiteResolver;
 use Illuminate\Http\RedirectResponse;
@@ -15,7 +14,6 @@ class DashboardController extends Controller
 {
     public function __construct(
         private readonly DashboardQuery $dashboardQuery,
-        private readonly AiInsightGenerationCoordinator $aiInsights,
         private readonly CurrentWebsiteResolver $websiteResolver,
         private readonly SearchConsoleAnalyticsService $searchConsoleAnalytics,
     ) {}
@@ -48,10 +46,6 @@ class DashboardController extends Controller
                 'domains' => $project->domains->pluck('domain')->values(),
             ],
             'analytics' => $analytics,
-            'aiInsightRun' => fn (): ?array => $this->aiInsights->status(
-                $project,
-                $analytics['actionableInsights'] ?? [],
-            ),
             'searchPerformance' => Inertia::defer(fn (): array => $this->searchConsoleAnalytics->report(
                 $project,
                 $analytics['range']['from'],

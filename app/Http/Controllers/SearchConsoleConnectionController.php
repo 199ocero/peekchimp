@@ -76,7 +76,6 @@ class SearchConsoleConnectionController extends Controller
 
         DB::transaction(function () use ($project, $connection): void {
             $project->searchConsoleMetrics()->delete();
-            $project->insights()->where('category', 'search')->delete();
             $connection->delete();
         });
         Cache::forget('dashboard:search-console:'.$project->getKey());

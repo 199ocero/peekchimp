@@ -92,12 +92,11 @@ function test(): void {
             >
                 Workspace settings
             </p>
-            <h1 class="mt-2 text-2xl font-medium tracking-tight">
-                AI insights
-            </h1>
+            <h1 class="mt-2 text-2xl font-medium tracking-tight">AI chat</h1>
             <p class="mt-1 text-sm text-muted-foreground">
-                Peekchimp sends aggregate changes only. Your workspace key stays
-                encrypted and AI can be disabled at any time.
+                Choose the provider and model used by your workspace AI chat.
+                Your workspace key stays encrypted and AI can be disabled at any
+                time.
             </p>
         </header>
         <Card class="p-5"
@@ -171,7 +170,7 @@ function test(): void {
                 </div>
                 <label class="flex items-center gap-2 text-sm"
                     ><input v-model="form.is_enabled" type="checkbox" /> Enable
-                    AI explanations</label
+                    AI chat</label
                 >
                 <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     <Button :disabled="form.processing">Save settings</Button

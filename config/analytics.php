@@ -33,26 +33,6 @@ return [
         'cache_seconds' => 60,
     ],
 
-    'change_detection' => [
-        'minimum_combined_count' => 40,
-        'minimum_count' => 10,
-        'minimum_percentage' => 25.0,
-        'minimum_dimension_percentage' => 30.0,
-        'minimum_rate_denominator' => 50,
-        'minimum_rate_point_change' => 5.0,
-        'max_candidates' => 5,
-    ],
-
-    'ai' => [
-        'enabled' => (bool) env('PEEKCHIMP_AI_ENABLED', true),
-        'providers' => ['openai', 'anthropic', 'gemini', 'deepseek'],
-        'max_payload_bytes' => 12288,
-        'max_candidates' => 5,
-        'cooldown_hours' => 6,
-        'request_timeout_seconds' => 120,
-        'stale_after_seconds' => 180,
-    ],
-
     'geolocation' => [
         'database_path' => env(
             'PEEKCHIMP_GEOIP_DATABASE_PATH',

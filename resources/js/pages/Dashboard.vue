@@ -1,40 +1,21 @@
 <script setup lang="ts">
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import {
-    Deferred,
-    Head,
-    Link,
-    router,
-    usePage,
-    usePoll,
-} from '@inertiajs/vue3';
-import {
-    Bot,
     CalendarDays,
-    ChartNoAxesCombined,
     CircleGauge,
-    Clock3,
-    FileInput,
     FileText,
     GitBranch,
-    House,
-    Info,
     Lightbulb,
     RefreshCw,
     ScanEye,
     Search,
     Share2,
-    Smartphone,
-    Sparkles,
     Target,
     Timer,
-    TrendingUp,
     UsersRound,
     Waypoints,
 } from '@lucide/vue';
-import type { Component } from 'vue';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { toast } from 'vue-sonner';
-import GenerateDashboardAiInsightsController from '@/actions/App/Http/Controllers/GenerateDashboardAiInsightsController';
+import { computed, ref, watch } from 'vue';
 import DashboardBreakdownCard from '@/components/dashboard/DashboardBreakdownCard.vue';
 import DashboardTrafficChart from '@/components/dashboard/DashboardTrafficChart.vue';
 import MetricTrendCard from '@/components/dashboard/MetricTrendCard.vue';
@@ -42,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { dashboard } from '@/routes';
-import { edit as editAi } from '@/routes/settings/ai';
 import { index as goalsIndex } from '@/routes/websites/goals';
 import { edit as editWebsiteSettings } from '@/routes/websites/settings';
 
@@ -56,19 +36,6 @@ type MetricTrend = {
     previous: number;
     change: number | null;
     series: number[];
-};
-type ActionableInsight = {
-    id: number;
-    fingerprint: string;
-    category: string;
-    current_value: number;
-    previous_value: number;
-    percentage_change: number | null;
-    summary: string;
-    explanation: string;
-    recommendation: string;
-    ai_enhanced?: boolean;
-    ai_generated_at?: string | null;
 };
 type Analytics = {
     range: {
@@ -114,14 +81,6 @@ type Analytics = {
     campaigns: Breakdown[];
     mediums: Breakdown[];
     aiReferrals: { totalVisits: number; sources: Breakdown[] };
-    actionableInsights: ActionableInsight[];
-    whatChanged: ActionableInsight[];
-};
-type AiInsightRun = {
-    id: number;
-    status: 'queued' | 'running' | 'completed' | 'failed' | 'skipped';
-    error: string | null;
-    updatedAt: string;
 };
 type SearchMetric = {
     current: number | null;
@@ -213,7 +172,6 @@ const props = defineProps<{
         domains: string[];
     };
     analytics: Analytics;
-    aiInsightRun?: AiInsightRun | null;
     searchPerformance?: SearchPerformance;
 }>();
 
@@ -224,24 +182,12 @@ defineOptions({
 });
 
 const selectedRange = ref(props.analytics.range.key);
-const page = usePage();
-const isSubmittingAi = ref(false);
 const isManualRefreshing = ref(false);
 const isChangingRange = ref(false);
 const activePageTab = ref<'top' | 'entry' | 'exit'>('top');
 const showAllPages = ref(false);
 const activeSearchTab = ref<'landingPages' | 'queries'>('landingPages');
 const selectedLandingPagePath = ref<string | null>(null);
-let refreshTimer: number | undefined;
-let aiPollRunId: number | null = null;
-
-const isGeneratingAi = computed(
-    () =>
-        isSubmittingAi.value ||
-        props.aiInsightRun?.status === 'queued' ||
-        props.aiInsightRun?.status === 'running',
-);
-
 const comparisonLabel = computed(() => {
     if (props.analytics.range.key === '7d') {
         return 'Previous 7 days';
@@ -352,169 +298,8 @@ const metricCards = computed(() => [
     },
 ]);
 
-const actionableInsights = computed(
-    () =>
-        props.analytics.actionableInsights ?? props.analytics.whatChanged ?? [],
-);
-
 const sources = computed(
     () => props.analytics.sources ?? props.analytics.referrers,
-);
-const topSource = computed(() => sources.value[0] ?? null);
-const topLandingPage = computed(
-    () => props.analytics.entryPages[0] ?? props.analytics.topPages[0] ?? null,
-);
-const topDevice = computed(() => props.analytics.devices[0] ?? null);
-const peakPoint = computed(() => {
-    return props.analytics.timeseries.reduce<
-        Analytics['timeseries'][number] | null
-    >((peak, point) => {
-        if (peak === null || point.visitors > peak.visitors) {
-            return point;
-        }
-
-        return peak;
-    }, null);
-});
-
-const topInsightFacts = computed(() => [
-    {
-        id: 'source',
-        label: 'Top traffic source',
-        value: topSource.value?.label ?? 'No source yet',
-        detail: topSource.value
-            ? formatShare(topSource.value.value, totalOf(sources.value)) +
-              ' of visits'
-            : 'Waiting for visits',
-        icon: Target,
-        iconClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    },
-    {
-        id: 'landing-page',
-        label: 'Top landing page',
-        value: topLandingPage.value?.label ?? 'No landing page yet',
-        detail: topLandingPage.value
-            ? formatShare(
-                  topLandingPage.value.value,
-                  Math.max(1, props.analytics.metrics.sessions),
-              ) + ' of visits'
-            : 'Waiting for visits',
-        icon: FileInput,
-        iconClass: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-    },
-    {
-        id: 'device',
-        label: 'Top device',
-        value: topDevice.value?.label ?? 'No device yet',
-        detail: topDevice.value
-            ? formatShare(
-                  topDevice.value.value,
-                  totalOf(props.analytics.devices),
-              ) + ' of visits'
-            : 'Waiting for visits',
-        icon: Smartphone,
-        iconClass: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-    },
-    {
-        id: 'peak',
-        label: 'Peak period',
-        value: peakPoint.value?.label ?? 'Not enough data',
-        detail: peakPoint.value
-            ? formatNumber(peakPoint.value.visitors) + ' visitors'
-            : 'Waiting for visits',
-        icon: Clock3,
-        iconClass: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-    },
-]);
-
-type DisplayInsight = {
-    id: string;
-    title: string;
-    description: string;
-    recommendation: string;
-    aiEnhanced: boolean;
-    icon: Component;
-    iconClass: string;
-};
-
-const snapshotInsights = computed<DisplayInsight[]>(() => [
-    {
-        id: 'baseline',
-        title:
-            formatNumber(props.analytics.metrics.visitors) +
-            ' visitors recorded',
-        description: props.analytics.comparison.available
-            ? 'Your current audience for this selected period.'
-            : 'Peekchimp is using this traffic to build your first reliable baseline.',
-        recommendation: props.analytics.comparison.available
-            ? 'Use this as the reference for the next matching period.'
-            : 'Keep tracking enabled until both matching periods contain traffic.',
-        aiEnhanced: false,
-        icon: TrendingUp,
-        iconClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    },
-    {
-        id: 'source',
-        title: topSource.value
-            ? topSource.value.label +
-              ' brought ' +
-              formatNumber(topSource.value.value) +
-              ' visits'
-            : 'Traffic sources are still being collected',
-        description: topSource.value
-            ? 'This is the largest traffic source in the selected period.'
-            : 'Source details will appear as new visits arrive.',
-        recommendation: topSource.value
-            ? 'Use campaign tags on shared links so direct traffic is easier to explain.'
-            : 'Keep tracking enabled while Peekchimp collects source data.',
-        aiEnhanced: false,
-        icon: House,
-        iconClass: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-    },
-    {
-        id: 'page',
-        title: topLandingPage.value
-            ? topLandingPage.value.label +
-              ' led with ' +
-              formatNumber(topLandingPage.value.value) +
-              ' visits'
-            : 'Landing pages are still being collected',
-        description: topLandingPage.value
-            ? 'This is where the most visits began in the selected period.'
-            : 'Landing-page details will appear as visits arrive.',
-        recommendation: topLandingPage.value
-            ? 'Make the next action on this page clear and easy to find.'
-            : 'Keep tracking enabled while Peekchimp collects page data.',
-        aiEnhanced: false,
-        icon: FileText,
-        iconClass: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-    },
-]);
-
-const displayedInsights = computed<DisplayInsight[]>(() => {
-    if (
-        !props.analytics.comparison.available ||
-        actionableInsights.value.length === 0
-    ) {
-        return snapshotInsights.value;
-    }
-
-    return actionableInsights.value.slice(0, 3).map((insight) => ({
-        id: insight.fingerprint,
-        title: insight.summary,
-        description: insight.explanation,
-        recommendation: insight.recommendation,
-        aiEnhanced: insight.ai_enhanced === true,
-        icon: ChartNoAxesCombined,
-        iconClass:
-            insight.percentage_change !== null && insight.percentage_change < 0
-                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    }));
-});
-
-const hasAiEnhancedInsights = computed(() =>
-    displayedInsights.value.some((insight) => insight.aiEnhanced),
 );
 const acquisitionTabs = computed(() => [
     {
@@ -677,14 +462,6 @@ function formatDate(value: string): string {
     }).format(new Date(value + 'T00:00:00Z'));
 }
 
-function formatShare(value: number, total: number): string {
-    if (total <= 0) {
-        return '0%';
-    }
-
-    return formatPercentage((value / total) * 100);
-}
-
 function totalOf(items: Breakdown[]): number {
     return items.reduce((total, item) => total + item.value, 0);
 }
@@ -706,7 +483,7 @@ function loadRange(range: string): void {
         {
             preserveState: true,
             preserveScroll: true,
-            only: ['analytics', 'aiInsightRun', 'searchPerformance'],
+            only: ['analytics', 'searchPerformance'],
             onFinish: () => {
                 isChangingRange.value = false;
             },
@@ -717,132 +494,22 @@ function loadRange(range: string): void {
 function refresh(): void {
     isManualRefreshing.value = true;
     router.reload({
-        only: ['analytics', 'aiInsightRun', 'searchPerformance'],
+        only: ['analytics', 'searchPerformance'],
         onFinish: () => {
             isManualRefreshing.value = false;
         },
     });
 }
 
-function generateAiInsights(): void {
-    isSubmittingAi.value = true;
-    router.post(
-        GenerateDashboardAiInsightsController().url,
-        { range: selectedRange.value },
-        {
-            preserveScroll: true,
-            onFlash: (flash) => {
-                const generation = flash.aiInsightGeneration as
-                    | { queued?: boolean; runId?: number; message?: string }
-                    | undefined;
-
-                if (generation?.queued === true) {
-                    aiPollRunId = generation.runId ?? null;
-
-                    if (!aiInsightPolling.value) {
-                        startAiInsightPolling();
-                    }
-                }
-            },
-            onError: () => {
-                toast.error('Peekchimp could not queue AI insight generation.');
-            },
-            onFinish: () => {
-                isSubmittingAi.value = false;
-            },
-        },
-    );
-}
-
-const {
-    start: startAiInsightPolling,
-    stop: stopAiInsightPolling,
-    polling: aiInsightPolling,
-} = usePoll(
-    2500,
-    {
-        only: ['aiInsightRun'],
-    },
-    {
-        autoStart: false,
-        keepAlive: true,
-        mode: 'rest',
-    },
-);
-
-watch(
-    () =>
-        props.aiInsightRun
-            ? `${props.aiInsightRun.id}:${props.aiInsightRun.status}:${props.aiInsightRun.updatedAt}`
-            : null,
-    () => {
-        const run = props.aiInsightRun;
-        const isActive = run?.status === 'queued' || run?.status === 'running';
-
-        if (run && isActive) {
-            aiPollRunId = run.id;
-
-            if (!aiInsightPolling.value) {
-                startAiInsightPolling();
-            }
-
-            return;
-        }
-
-        if (aiInsightPolling.value) {
-            stopAiInsightPolling();
-        }
-
-        if (!run || aiPollRunId !== run.id) {
-            return;
-        }
-
-        aiPollRunId = null;
-
-        if (run.status === 'completed') {
-            router.reload({
-                only: ['analytics'],
-                onSuccess: () => {
-                    toast.success('AI recommendations updated.');
-                },
-            });
-
-            return;
-        }
-
-        if (run.status === 'failed' || run.status === 'skipped') {
-            toast.error(
-                run.error ||
-                    'AI finished without producing a useful recommendation.',
-            );
-        }
-    },
-    { immediate: true },
-);
-
 watch(
     () => props.analytics.range.key,
     (rangeKey) => {
         selectedRange.value = rangeKey;
-        aiPollRunId = null;
     },
 );
 
 watch(activePageTab, () => {
     showAllPages.value = false;
-});
-
-onMounted(() => {
-    refreshTimer = window.setInterval(
-        () => router.reload({ only: ['analytics', 'aiInsightRun'] }),
-        30000,
-    );
-});
-
-onBeforeUnmount(() => {
-    if (refreshTimer !== undefined) {
-        window.clearInterval(refreshTimer);
-    }
 });
 </script>
 
@@ -969,202 +636,15 @@ onBeforeUnmount(() => {
                 />
             </section>
 
-            <section
-                class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(17rem,1fr)]"
-                aria-label="Analytics insights"
-            >
-                <Card
-                    class="overflow-hidden rounded-2xl !border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.07] via-card to-card p-5 shadow-none sm:p-6"
-                >
-                    <div
-                        class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-                    >
-                        <div class="flex items-start gap-3">
-                            <span
-                                class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                            >
-                                <Sparkles class="size-5" />
-                            </span>
-                            <div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <h2
-                                        class="text-xl font-semibold tracking-[-0.025em]"
-                                    >
-                                        Analytics insights
-                                    </h2>
-                                    <span
-                                        :class="[
-                                            'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
-                                            hasAiEnhancedInsights
-                                                ? 'border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300'
-                                                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-                                        ]"
-                                    >
-                                        {{
-                                            hasAiEnhancedInsights
-                                                ? 'AI-enhanced'
-                                                : analytics.comparison.available
-                                                  ? 'Data-backed'
-                                                  : 'Building baseline'
-                                        }}
-                                    </span>
-                                </div>
-                                <p class="mt-1 text-sm text-muted-foreground">
-                                    {{
-                                        hasAiEnhancedInsights
-                                            ? 'AI-enhanced recommendations based on aggregate analytics changes.'
-                                            : analytics.comparison.available
-                                              ? 'Data-backed changes and recommendations from your analytics.'
-                                              : 'Useful current-period facts while Peekchimp builds a reliable comparison.'
-                                    }}
-                                </p>
-                            </div>
-                        </div>
-                        <div
-                            v-if="page.props.auth.user?.is_admin"
-                            class="flex shrink-0 items-center gap-2"
-                        >
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="rounded-xl bg-card"
-                                :disabled="isGeneratingAi"
-                                @click="generateAiInsights"
-                            >
-                                <Bot class="size-3.5" />
-                                {{
-                                    isGeneratingAi
-                                        ? 'Generating…'
-                                        : 'Generate AI insight'
-                                }}
-                            </Button>
-                            <Button
-                                as-child
-                                variant="outline"
-                                size="sm"
-                                class="rounded-xl bg-card"
-                            >
-                                <Link :href="editAi().url">AI settings</Link>
-                            </Button>
-                        </div>
-                    </div>
-
-                    <p
-                        v-if="aiInsightRun?.status === 'failed'"
-                        class="mt-3 text-xs text-destructive"
-                    >
-                        {{ aiInsightRun.error }} You can try generating again.
-                    </p>
-
-                    <div class="mt-6 grid gap-3 md:grid-cols-3">
-                        <article
-                            v-for="insight in displayedInsights"
-                            :key="insight.id"
-                            class="flex min-h-60 flex-col rounded-2xl border border-border/80 bg-card p-4 shadow-xs"
-                        >
-                            <div class="flex items-start gap-3">
-                                <span
-                                    :class="[
-                                        'flex size-9 shrink-0 items-center justify-center rounded-full',
-                                        insight.iconClass,
-                                    ]"
-                                    aria-hidden="true"
-                                >
-                                    <component
-                                        :is="insight.icon"
-                                        class="size-4.5"
-                                    />
-                                </span>
-                                <div class="min-w-0">
-                                    <h3 class="text-sm leading-5 font-semibold">
-                                        {{ insight.title }}
-                                    </h3>
-                                    <p
-                                        class="mt-2 text-xs leading-5 text-muted-foreground"
-                                    >
-                                        {{ insight.description }}
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="mt-auto rounded-xl bg-muted/70 p-3.5">
-                                <p
-                                    :class="[
-                                        'flex items-center gap-1.5 text-[11px] font-semibold',
-                                        insight.aiEnhanced
-                                            ? 'text-violet-700 dark:text-violet-300'
-                                            : 'text-emerald-700 dark:text-emerald-300',
-                                    ]"
-                                >
-                                    <Bot
-                                        v-if="insight.aiEnhanced"
-                                        class="size-3.5"
-                                    />
-                                    <Lightbulb v-else class="size-3.5" />
-                                    {{
-                                        insight.aiEnhanced
-                                            ? 'AI-enhanced recommendation'
-                                            : 'Recommendation'
-                                    }}
-                                </p>
-                                <p class="mt-1.5 text-xs leading-5">
-                                    {{ insight.recommendation }}
-                                </p>
-                            </div>
-                        </article>
-                    </div>
-                </Card>
-
-                <Card class="rounded-2xl p-5 shadow-xs sm:p-6">
-                    <div class="flex items-center gap-2">
-                        <h2 class="font-semibold">Top insights</h2>
-                        <Info
-                            class="size-3.5 text-muted-foreground"
-                            aria-hidden="true"
-                        />
-                    </div>
-                    <div class="mt-5 flex flex-col gap-5">
-                        <div
-                            v-for="fact in topInsightFacts"
-                            :key="fact.id"
-                            class="flex items-start gap-3"
-                        >
-                            <span
-                                :class="[
-                                    'flex size-9 shrink-0 items-center justify-center rounded-full',
-                                    fact.iconClass,
-                                ]"
-                                aria-hidden="true"
-                            >
-                                <component :is="fact.icon" class="size-4.5" />
-                            </span>
-                            <div class="min-w-0">
-                                <p class="text-xs text-muted-foreground">
-                                    {{ fact.label }}
-                                </p>
-                                <p
-                                    class="mt-0.5 truncate text-sm font-semibold"
-                                >
-                                    {{ fact.value }}
-                                </p>
-                                <p class="mt-0.5 text-xs text-muted-foreground">
-                                    {{ fact.detail }}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </Card>
-            </section>
-
-            <section
-                class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(17rem,1fr)]"
-                aria-label="Traffic and pages"
-            >
+            <section aria-label="Traffic over time">
                 <DashboardTrafficChart
                     :range="analytics.range"
                     :metrics="analytics.metrics"
                     :timeseries="analytics.timeseries"
                 />
+            </section>
 
+            <section aria-label="Top pages">
                 <Card
                     class="overflow-hidden rounded-2xl border-border/80 p-0 shadow-xs"
                 >

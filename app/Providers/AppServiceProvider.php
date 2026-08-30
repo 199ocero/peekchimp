@@ -2,10 +2,8 @@
 
 namespace App\Providers;
 
-use App\Contracts\Analytics\InsightActionProvider;
 use App\Contracts\SearchConsoleClient;
 use App\Models\User;
-use App\Services\Analytics\InternalInsightActionProvider;
 use App\Services\SearchConsole\GoogleSearchConsoleClient;
 use Carbon\CarbonImmutable;
 use DateInterval;
@@ -27,7 +25,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(InsightActionProvider::class, InternalInsightActionProvider::class);
         $this->app->bind(SearchConsoleClient::class, GoogleSearchConsoleClient::class);
     }
 

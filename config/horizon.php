@@ -211,18 +211,6 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
-        'supervisor-ai' => [
-            'connection' => 'redis',
-            'queue' => ['ai'],
-            'balance' => false,
-            'maxProcesses' => 1,
-            'maxTime' => 0,
-            'maxJobs' => 0,
-            'memory' => 128,
-            'tries' => 1,
-            'timeout' => 150,
-            'nice' => 0,
-        ],
         'supervisor-crawl' => [
             'connection' => 'redis',
             'queue' => ['crawl'],
@@ -244,9 +232,6 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
-            'supervisor-ai' => [
-                'maxProcesses' => 1,
-            ],
             'supervisor-crawl' => [
                 'maxProcesses' => 2,
             ],
@@ -255,9 +240,6 @@ return [
         'local' => [
             'supervisor-analytics' => [
                 'maxProcesses' => 2,
-            ],
-            'supervisor-ai' => [
-                'maxProcesses' => 1,
             ],
             'supervisor-crawl' => [
                 'maxProcesses' => 1,

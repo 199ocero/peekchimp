@@ -1,75 +1,55 @@
 <?php
 
-use App\Models\AiInsightRun;
 use App\Models\AnalyticsEvent;
 use App\Models\User;
-use App\Queries\Analytics\DashboardQuery;
-use App\Services\Analytics\AiInsightContextBuilder;
-use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
-    $response = $this->get(route('dashboard'));
-    $response->assertRedirect(route('login'));
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
 });
 
 test('authenticated users without a verified website are redirected to onboarding', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
 
-    $response = $this->get(route('dashboard'));
+    $this->actingAs($user)->get(route('dashboard'))->assertRedirect(route('onboarding.show'));
 
-    $response->assertRedirect(route('onboarding.show'));
     expect($user->projects()->count())->toBe(0);
 });
 
-test('authenticated users with a verified website can visit the dashboard', function () {
+test('authenticated users with a verified website can visit the streamlined dashboard', function () {
     $user = User::factory()->withVerifiedWebsite()->create();
     $project = $user->projects()->sole();
-    AnalyticsEvent::factory()->count(60)->create([
+    AnalyticsEvent::factory()->count(3)->create([
         'project_id' => $project->getKey(),
         'event_name' => 'page_view',
         'occurred_at' => now()->subDay(),
     ]);
-    AnalyticsEvent::factory()->count(40)->create([
-        'project_id' => $project->getKey(),
-        'event_name' => 'page_view',
-        'occurred_at' => now()->subDays(8),
-    ]);
-    Queue::fake();
-    $analytics = app(DashboardQuery::class)->run($project, ['range' => '7d'], queueAiInsights: false);
-    $candidates = $analytics['actionableInsights'];
-    $contextBuilder = app(AiInsightContextBuilder::class);
-    $context = $contextBuilder->build(
-        $project,
-        $candidates,
-        $candidates[0]['period_start'],
-        $candidates[0]['period_end'],
-    );
-    $run = AiInsightRun::factory()->for($project)->create([
-        'context_hash' => $contextBuilder->hash($context),
-        'status' => 'failed',
-        'error' => 'Provider unavailable.',
-    ]);
 
-    $response = $this->actingAs($user)->get(route('dashboard'));
-
-    $response->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->where('aiInsightRun.status', 'failed')
-        ->where('aiInsightRun.error', 'Provider unavailable.')
-        ->where('aiInsightRun.updatedAt', $run->updated_at->toIso8601String()));
+    $this->actingAs($user)->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('analytics.metrics')
+            ->has('analytics.timeseries')
+            ->missing('analytics.insights')
+            ->missing('analytics.actionableInsights')
+            ->missing('analytics.whatChanged')
+            ->missing('aiInsightRun'));
 });
 
-test('dashboard keeps the activity visualization without the installation prompt', function () {
+test('dashboard keeps the traffic visualization without legacy insight cards', function () {
     $dashboardPage = file_get_contents(resource_path('js/pages/Dashboard.vue'));
     $trafficChart = file_get_contents(resource_path('js/components/dashboard/DashboardTrafficChart.vue'));
 
     expect($dashboardPage.$trafficChart)
+        ->toContain('aria-label="Traffic over time"')
         ->toContain('Visitors and views over time')
         ->toContain('traffic-line')
         ->toContain('traffic-line-arrive')
-        ->not->toContain('stroke-dasharray: 1')
-        ->not->toContain('Add Peekchimp to your site')
+        ->toContain('Top pages')
+        ->not->toContain('Analytics insights')
+        ->not->toContain('Top insights')
+        ->not->toContain('Generate AI insight')
+        ->not->toContain('aiInsightRun')
         ->not->toContain('installationSnippet');
 });
 
@@ -81,34 +61,17 @@ test('dashboard follows the reference hierarchy with useful plain-language metri
     expect($dashboardPage.$metricTrendCard.$trafficChart)
         ->toContain("label: 'Visitors'")
         ->toContain('icon: UsersRound')
-        ->toContain('Estimated unique visitors during the selected period.')
         ->toContain("label: 'Views'")
         ->toContain('icon: ScanEye')
-        ->toContain('Total page loads, including repeat views.')
-        ->toContain("label: 'Bounce rate'")
-        ->toContain('icon: GitBranch')
-        ->toContain("label: 'Avg. visit time'")
-        ->toContain('icon: Timer')
         ->toContain("label: 'Conversions'")
-        ->toContain('icon: Target')
-        ->toContain('Analytics insights')
-        ->toContain('Top insights')
         ->toContain('Traffic over time')
         ->toContain('Top pages')
         ->toContain('Acquisition')
         ->toContain('Audience')
         ->toContain('AI referrals')
-        ->toContain('Building baseline')
-        ->toContain('Useful current-period facts')
         ->toContain('<MetricTrendCard')
         ->toContain('comparisonAvailable')
-        ->toContain('Collecting a previous matching period')
-        ->toContain("return 'text-success'")
-        ->toContain("return 'text-destructive'")
-        ->toContain('metric-sparkline-reveal')
         ->toContain("activePageTab = ref<'top' | 'entry' | 'exit'>('top')")
-        ->toContain('@click="showAllPages = !showAllPages"')
-        ->toContain(':href="editAi().url"')
         ->not->toContain('View all changes')
         ->not->toContain('Open one area at a time');
 });

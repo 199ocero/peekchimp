@@ -14,7 +14,7 @@ class AiTrafficController extends Controller
     public function __invoke(Request $request, Project $project, DashboardQuery $dashboard): Response
     {
         Gate::authorize('view', $project);
-        $analytics = $dashboard->run($project, $request->only(['range', 'from', 'to']), false);
+        $analytics = $dashboard->run($project, $request->only(['range', 'from', 'to']));
 
         return Inertia::render('AiTraffic', [
             'project' => [

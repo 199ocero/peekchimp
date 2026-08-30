@@ -28,4 +28,5 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Services/Analytics/EventNormalizer.php, app/Services/Analytics/** | .ai/rules/services-analytics.md |
 | app/Services/SearchConsole/** | .ai/rules/services-search-console.md |
 | app/Models/User.php,app/Policies/ProjectPolicy.php,app/Services/Websites/** | .ai/rules/services-websites.md |
+| app/Queries/Analytics/**,app/Mcp/Tools/GetAnalyticsOverview.php,resources/js/pages/Dashboard.vue,resources/js/pages/settings/Ai.vue | .ai/rules/settings.md |
 | app/Services/Websites/** | .ai/rules/websites.md |

@@ -130,12 +130,6 @@ class Project extends Model
         return $this->hasMany(AnalyticsRollup::class);
     }
 
-    /** @return HasMany<Insight, $this> */
-    public function insights(): HasMany
-    {
-        return $this->hasMany(Insight::class);
-    }
-
     /** @return HasMany<ImportantAction, $this> */
     public function importantActions(): HasMany
     {

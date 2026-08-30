@@ -35,7 +35,7 @@ const sidebarNavItems = computed<NavItem[]>(() => [
     ...(page.props.auth.user?.is_admin
         ? [
               { title: 'Members', href: editMembers() },
-              { title: 'AI insights', href: editAi() },
+              { title: 'AI chat', href: editAi() },
           ]
         : []),
 ]);

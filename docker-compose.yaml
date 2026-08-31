@@ -32,6 +32,7 @@ x-peekchimp-runtime: &peekchimp-runtime
   REDIS_QUEUE_CONNECTION: default
   REDIS_QUEUE: ${REDIS_QUEUE:-default}
   REDIS_QUEUE_RETRY_AFTER: ${REDIS_QUEUE_RETRY_AFTER:-180}
+  PASSPORT_KEY_PATH: /var/www/html/storage/app/private/passport
 
 services:
   app:
@@ -48,8 +49,9 @@ services:
       - "8000"
     volumes:
       - geoip-data:/var/www/html/storage/app/private/geoip
+      - passport-keys:/var/www/html/storage/app/private/passport
     command: >-
-      sh -lc "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
+      sh -lc "if [ ! -e storage/app/private/passport/oauth-private.key ] && [ ! -e storage/app/private/passport/oauth-public.key ]; then php artisan passport:keys --no-interaction; elif [ ! -r storage/app/private/passport/oauth-private.key ] || [ ! -r storage/app/private/passport/oauth-public.key ]; then echo 'Passport encryption keys are incomplete or unreadable.' >&2; exit 1; fi; php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/up || exit 1"]
       interval: 10s
@@ -67,6 +69,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - passport-keys:/var/www/html/storage/app/private/passport
     command: php artisan horizon
     stop_grace_period: 90s
 
@@ -82,6 +86,7 @@ services:
         condition: service_healthy
     volumes:
       - geoip-data:/var/www/html/storage/app/private/geoip
+      - passport-keys:/var/www/html/storage/app/private/passport
     command: php artisan schedule:work
 
   postgres:
@@ -118,5 +123,6 @@ services:
 
 volumes:
   geoip-data:
+  passport-keys:
   postgres-data:
   redis-data:

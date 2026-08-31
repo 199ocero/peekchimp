@@ -43,6 +43,12 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(120)->by('mcp:'.($request->user()?->getAuthIdentifier() ?? $request->ip()));
         });
 
+        $passportKeyPath = config('passport.key_path');
+
+        if (is_string($passportKeyPath) && $passportKeyPath !== '') {
+            Passport::loadKeysFrom($passportKeyPath);
+        }
+
         Passport::authorizationView('mcp.authorize');
         Passport::tokensExpireIn(new DateInterval('PT1H'));
         Passport::refreshTokensExpireIn(new DateInterval('P30D'));

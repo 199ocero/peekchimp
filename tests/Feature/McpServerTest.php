@@ -27,6 +27,7 @@ use App\Models\SearchConsoleMetric;
 use App\Models\User;
 use App\Models\WebsitePageSnapshot;
 use App\Models\WorkspaceAiSetting;
+use App\Providers\AppServiceProvider;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Passport\Client;
 use Laravel\Passport\Passport;
@@ -42,6 +43,24 @@ test('mcp publishes oauth discovery metadata and protects the streamable http en
         ->assertHeader('Allow', 'POST');
 
     $this->postJson('/mcp', [])->assertUnauthorized();
+});
+
+test('passport uses its configured persistent OAuth key directory', function () {
+    $originalKeyPath = config('passport.key_path');
+    $keyPath = storage_path('app/private/passport');
+
+    config(['passport.key_path' => $keyPath]);
+    (new AppServiceProvider(app()))->boot();
+
+    try {
+        expect(Passport::keyPath('oauth-private.key'))
+            ->toBe($keyPath.'/oauth-private.key')
+            ->and(Passport::keyPath('oauth-public.key'))
+            ->toBe($keyPath.'/oauth-public.key');
+    } finally {
+        config(['passport.key_path' => $originalKeyPath]);
+        Passport::loadKeysFrom(storage_path());
+    }
 });
 
 test('mcp dynamic client registration grants only the mcp scope', function () {

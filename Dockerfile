@@ -36,7 +36,7 @@ RUN apk add --no-cache libpq libzip icu-libs oniguruma \
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=assets /app/public/build ./public/build
 COPY . .
-RUN mkdir -p storage/framework/{cache,sessions,views} storage/logs bootstrap/cache \
+RUN mkdir -p storage/app/private/passport storage/framework/{cache,sessions,views} storage/logs bootstrap/cache \
     && php artisan analytics:geoip:update --no-interaction \
     && chown -R www-data:www-data storage bootstrap/cache
 USER www-data

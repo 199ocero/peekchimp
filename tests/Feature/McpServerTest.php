@@ -7,6 +7,7 @@ use App\Mcp\Prompts\PlanWebsiteGrowth;
 use App\Mcp\Resources\AnalyticsMethodologyResource;
 use App\Mcp\Servers\PeekchimpServer;
 use App\Mcp\Tools\BuildContentBrief;
+use App\Mcp\Tools\CheckBehavioralSignals;
 use App\Mcp\Tools\CreateGoal;
 use App\Mcp\Tools\FindContentOpportunities;
 use App\Mcp\Tools\FindFriction;
@@ -194,6 +195,44 @@ test('investigation tools return aggregate evidence and preserve tenant boundari
             'funnel_id' => $funnel->getKey(),
         ])
         ->assertHasErrors(['not available']);
+});
+
+test('behavioral signal check confirms stored events without exposing payloads', function () {
+    $user = User::factory()->withVerifiedWebsite()->create();
+    $project = $user->projects()->sole();
+    $project->update(['settings' => ['analytics' => ['autocapture_enabled' => true]]]);
+
+    AnalyticsEvent::factory()->for($project)->create([
+        'event_name' => 'page_view',
+        'session_id' => 'signal-session',
+        'occurred_at' => now()->subMinute(),
+    ]);
+    AnalyticsEvent::factory()->for($project)->create([
+        'event_name' => 'request_failure',
+        'session_id' => 'signal-session',
+        'properties' => ['request_path' => '/api/checkout', 'status' => 500],
+        'occurred_at' => now(),
+    ]);
+
+    PeekchimpServer::actingAs($user)
+        ->tool(CheckBehavioralSignals::class, [
+            'project_id' => $project->getKey(),
+            'range' => '30d',
+        ])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('status', 'ok')
+            ->where('data.status', 'receiving')
+            ->where('data.enabled', true)
+            ->where('data.stored', true)
+            ->where('data.signalCount', 1)
+            ->where('data.sessionCount', 1)
+            ->where('data.eventTypes.request_failure', 1)
+            ->where('data.pageviewSessions', 1)
+            ->where('data.lastSignalAt', fn ($value) => is_string($value))
+            ->missing('data.events.0.properties')
+            ->etc(),
+        );
 });
 
 test('report ranges are bounded and reject invalid custom dates', function () {

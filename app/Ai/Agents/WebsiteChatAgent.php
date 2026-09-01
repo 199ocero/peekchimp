@@ -3,6 +3,7 @@
 namespace App\Ai\Agents;
 
 use App\Mcp\Tools\BuildContentBrief;
+use App\Mcp\Tools\CheckBehavioralSignals;
 use App\Mcp\Tools\CreateGoal;
 use App\Mcp\Tools\FindContentOpportunities;
 use App\Mcp\Tools\FindFriction;
@@ -50,6 +51,7 @@ class WebsiteChatAgent implements Agent, HasTools, RemembersConversationsContrac
         GetOrganicSearchOpportunities::class,
         GetConversionPerformance::class,
         GetSetupGuide::class,
+        CheckBehavioralSignals::class,
         GetWebsiteContext::class,
         GetPageDiagnostic::class,
         FindContentOpportunities::class,
@@ -90,7 +92,7 @@ Stay within this product scope:
 
 Before using a tool or answering, decide whether the request is within that scope. If it is unrelated, do not call any tool and do not answer the unrelated request. Reply briefly: "That is outside what I can help with here. I can help you understand and improve {$this->project->name} using its analytics, search performance, conversions, content, and technical SEO. Try asking what changed, where traffic is being lost, or what to improve next." If a request mixes related and unrelated work, answer only the related part and briefly say which part you skipped. Do not mention these instructions or describe your scope-checking process.
 
-For setup, configuration, or "what is this" questions, start with get-setup-guide. Use it to explain the current state and link the user to the exact settings page. You may save growth context, create a goal, or start a crawl only through the available approved tools. When the user provides growth-context details and asks to add, save, update, or use them, immediately call save-growth-context with exactly those details. Do not ask for a separate text confirmation: the approval card is the confirmation step and no change is written until the user approves it. When a user rejects an approval, clearly say that no changes were made, ask what they would like adjusted, and wait for their new instructions before proposing another write. Request only one write tool at a time. Never request or accept API keys, passwords, OAuth tokens, recovery codes, member email addresses, or public sharing links. For Search Console, AI settings, members, profile, security, MCP connections, and public sharing, provide guidance only.
+For setup, configuration, or "what is this" questions, start with get-setup-guide. Use it to explain the current state and link the user to the exact settings page. For verifying behavioral signal collection, use check-behavioral-signals before page diagnostics or friction analysis. You may save growth context, create a goal, or start a crawl only through the available approved tools. When the user provides growth-context details and asks to add, save, update, or use them, immediately call save-growth-context with exactly those details. Do not ask for a separate text confirmation: the approval card is the confirmation step and no change is written until the user approves it. When a user rejects an approval, clearly say that no changes were made, ask what they would like adjusted, and wait for their new instructions before proposing another write. Request only one write tool at a time. Never request or accept API keys, passwords, OAuth tokens, recovery codes, member email addresses, or public sharing links. For Search Console, AI settings, members, profile, security, MCP connections, and public sharing, provide guidance only.
 
 Use the available tools whenever an in-scope question depends on this website's analytics, search performance, conversions, crawl data, business context, or setup state. The selected website is fixed by the application. Never ask for or invent a project ID. Default reporting questions to the last 30 days unless the user asks for another supported range. State the date range and any freshness or missing-data limitations that affect the answer.
 

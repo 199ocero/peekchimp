@@ -9,9 +9,50 @@ use Illuminate\Support\Collection;
 
 class BrowserSignalAnalyticsService
 {
+    /** @var array<int, string> */
+    private const SIGNAL_EVENT_NAMES = [
+        'autocapture.click',
+        'autocapture.submit',
+        'web_vital.lcp',
+        'browser_error',
+        'request_failure',
+    ];
+
     private const MIN_SESSIONS = 20;
 
     private const MIN_AFFECTED_SESSIONS = 10;
+
+    /** @return array<string, mixed> */
+    public function collectionStatus(Project $project, CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        $query = $project->events()
+            ->whereBetween('occurred_at', [$from->utc(), $to->utc()])
+            ->whereIn('event_name', self::SIGNAL_EVENT_NAMES);
+        $eventTypes = (clone $query)
+            ->select('event_name')
+            ->selectRaw('COUNT(*) as count')
+            ->groupBy('event_name')
+            ->pluck('count', 'event_name')
+            ->map(fn (mixed $count): int => (int) $count)
+            ->all();
+        $signalCount = array_sum($eventTypes);
+        $lastSignalAt = (clone $query)->latest('occurred_at')->value('occurred_at');
+        $status = ! $project->isAutocaptureEnabled()
+            ? 'disabled'
+            : ($signalCount === 0 ? 'no_data' : 'receiving');
+
+        return [
+            'status' => $status,
+            'enabled' => $project->isAutocaptureEnabled(),
+            'stored' => $signalCount > 0,
+            'signalCount' => $signalCount,
+            'sessionCount' => (int) (clone $query)->distinct('session_id')->count('session_id'),
+            'pageviewSessions' => $this->pageviewSessions($project, $from, $to),
+            'eventTypes' => $eventTypes,
+            'lastSignalAt' => $lastSignalAt === null ? null : CarbonImmutable::parse((string) $lastSignalAt)->toIso8601String(),
+            'evidenceRef' => 'analytics:signals:collection:'.$from->toDateString().':'.$to->toDateString(),
+        ];
+    }
 
     /** @return array<string, mixed> */
     public function page(Project $project, string $path, CarbonImmutable $from, CarbonImmutable $to): array
@@ -46,7 +87,7 @@ class BrowserSignalAnalyticsService
     {
         return $project->events()
             ->whereBetween('occurred_at', [$from->utc(), $to->utc()])
-            ->whereIn('event_name', ['autocapture.click', 'autocapture.submit', 'web_vital.lcp', 'browser_error', 'request_failure'])
+            ->whereIn('event_name', self::SIGNAL_EVENT_NAMES)
             ->when($path !== null, fn ($query) => $query->where('path', $path))
             ->get(['session_id', 'event_name', 'path', 'device', 'browser', 'properties', 'occurred_at']);
     }

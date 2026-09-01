@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -20,9 +21,16 @@ class McpConnectionController extends Controller
         abort_unless($user instanceof User, 403);
 
         $connections = $user->tokens()
-            ->with('client')
-            ->where('revoked', false)
-            ->where('expires_at', '>', now())
+            ->with(['client', 'refreshToken'])
+            ->where(function (Builder $query): void {
+                $query->where(function (Builder $query): void {
+                    $query->where('revoked', false)
+                        ->where('expires_at', '>', now());
+                })->orWhereHas('refreshToken', function (Builder $query): void {
+                    $query->where('revoked', false)
+                        ->where('expires_at', '>', now());
+                });
+            })
             ->get()
             ->filter(fn (Token $token): bool => $token->can('mcp:use') && $token->client !== null)
             ->groupBy('client_id')
@@ -34,7 +42,11 @@ class McpConnectionController extends Controller
                     'id' => (string) $first->client_id,
                     'name' => (string) $first->client->name,
                     'authorizedAt' => $tokens->min('created_at')?->toIso8601String(),
-                    'expiresAt' => $tokens->max('expires_at')?->toIso8601String(),
+                    'expiresAt' => $tokens->max(fn (Token $token) => $token->refreshToken !== null
+                        && ! $token->refreshToken->revoked
+                        && $token->refreshToken->expires_at?->isFuture() === true
+                            ? $token->refreshToken->expires_at
+                            : $token->expires_at)?->toIso8601String(),
                     'tokenCount' => $tokens->count(),
                 ];
             })

@@ -4,6 +4,7 @@ use App\Models\User;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Passport\Client;
+use Laravel\Passport\RefreshToken;
 use Laravel\Passport\Token;
 
 test('mcp settings show the endpoint and active connections', function () {
@@ -49,6 +50,41 @@ test('users can revoke an authorized mcp client and its refresh tokens', functio
         ->assertSessionHas('status', 'MCP access revoked.');
 
     expect($token->refresh()->revoked)->toBeTrue();
+});
+
+test('authorized mcp clients remain visible while their refresh token is active', function () {
+    $user = User::factory()->withVerifiedWebsite()->create();
+    $client = Client::factory()->asPublic()->create([
+        'name' => 'ChatGPT',
+        'scopes' => ['mcp:use'],
+    ]);
+    $token = Token::query()->create([
+        'id' => Str::random(80),
+        'user_id' => $user->getKey(),
+        'client_id' => $client->getKey(),
+        'name' => 'ChatGPT MCP',
+        'scopes' => ['mcp:use'],
+        'revoked' => false,
+        'expires_at' => now()->subMinute(),
+    ]);
+    $refreshToken = RefreshToken::query()->create([
+        'id' => Str::random(80),
+        'access_token_id' => $token->getKey(),
+        'revoked' => false,
+        'expires_at' => now()->addDays(30),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('settings.mcp.edit'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.name', 'ChatGPT')
+            ->where('connections.0.expiresAt', $refreshToken->expires_at->toIso8601String()),
+        );
+
+    $this->actingAs($user)
+        ->delete(route('settings.mcp.connections.destroy', ['client' => $client->getKey()]));
+
+    expect($refreshToken->refresh()->revoked)->toBeTrue();
 });
 
 test('example', function () {

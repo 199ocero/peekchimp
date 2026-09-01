@@ -279,6 +279,25 @@ test('dashboard groups AI referral visits by provider', function () {
         ->where('analytics.aiReferrals.sources.2.value', 1));
 });
 
+test('dashboard treats configured domain referrers as direct traffic', function () {
+    $user = User::factory()->create(['email_verified_at' => now()]);
+    $project = Project::factory()->create(['user_id' => $user->id]);
+    $project->domains()->create(['domain' => 'pastesheet.com', 'is_verified' => true]);
+
+    AnalyticsSession::factory()->create([
+        'project_id' => $project->id,
+        'referrer_host' => 'www.pastesheet.com',
+    ]);
+
+    $response = $this->actingAs($user)->get(route('dashboard'));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->where('analytics.sources', [
+            ['label' => 'Direct', 'value' => 1],
+        ]));
+});
+
 test('dashboard places today pageviews in the project timezone timeseries', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-23 12:30:00', 'UTC'));
 

@@ -22,6 +22,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/{Ai,Services/Ai,Http/Controllers}/**,app/Models/User.php,database/migrations/*agent_conversations*,database/migrations/*chat_conversation_contexts* | .ai/rules/migrations.md |
 | app/Models/Project.php | .ai/rules/models.md |
 | resources/js/pages/Dashboard.vue | .ai/rules/pages.md |
+| app/Services/Analytics/**,app/Queries/Analytics/** | .ai/rules/queries-analytics.md |
 | resources/** | .ai/rules/resources.md |
 | routes/** | .ai/rules/routes.md |
 | app/{Http/Controllers,Jobs,Services/SearchConsole}/** | .ai/rules/search-console.md |

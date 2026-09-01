@@ -724,7 +724,12 @@ class DashboardQuery
             ->get(['referrer_host', 'utm_source', 'utm_medium']);
 
         foreach ($sessions as $session) {
-            $source = $this->sourceGrouping->classify($session->referrer_host, $session->utm_source, $session->utm_medium)['source'];
+            $source = $this->sourceGrouping->classify(
+                $session->referrer_host,
+                $session->utm_source,
+                $session->utm_medium,
+                $project->domains->pluck('domain')->all(),
+            )['source'];
             $counts[$source] = ($counts[$source] ?? 0) + 1;
         }
 

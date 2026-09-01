@@ -7,15 +7,20 @@ use Illuminate\Support\Str;
 class SourceGrouping
 {
     /**
+     * @param  array<int, string>  $internalDomains
      * @return array{source: string, category: string}
      */
-    public function classify(?string $referrerHost, ?string $utmSource, ?string $utmMedium = null): array
+    public function classify(?string $referrerHost, ?string $utmSource, ?string $utmMedium = null, array $internalDomains = []): array
     {
         $source = Str::lower(trim((string) ($utmSource ?: $referrerHost)));
         $host = Str::lower(trim((string) $referrerHost));
         $medium = Str::lower(trim((string) $utmMedium));
 
         if ($source === '' && $host === '') {
+            return ['source' => 'Direct', 'category' => 'direct'];
+        }
+
+        if (trim((string) $utmSource) === '' && $this->isInternal($host, $internalDomains)) {
             return ['source' => 'Direct', 'category' => 'direct'];
         }
 
@@ -77,5 +82,19 @@ class SourceGrouping
             || Str::endsWith($host, '.'.$needle)
             || $source === $needle
             || Str::endsWith($source, '.'.$needle);
+    }
+
+    /**
+     * @param  array<int, string>  $internalDomains
+     */
+    private function isInternal(string $host, array $internalDomains): bool
+    {
+        foreach ($internalDomains as $domain) {
+            if ($this->matches($host, '', $domain)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

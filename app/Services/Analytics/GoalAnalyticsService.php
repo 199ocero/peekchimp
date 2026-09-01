@@ -4,6 +4,7 @@ namespace App\Services\Analytics;
 
 use App\Models\AnalyticsSession;
 use App\Models\Goal;
+use App\Models\ProjectDomain;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -21,6 +22,10 @@ class GoalAnalyticsService
     public function summary(Goal $goal, CarbonImmutable $from, CarbonImmutable $to, array $filters = []): array
     {
         $projectId = (int) $goal->project_id;
+        $internalDomains = ProjectDomain::query()
+            ->where('project_id', $projectId)
+            ->pluck('domain')
+            ->all();
         $sessionQuery = AnalyticsSession::query()
             ->where('project_id', $projectId)
             ->whereBetween('started_at', [$from->utc(), $to->utc()]);
@@ -51,13 +56,13 @@ class GoalAnalyticsService
             ->get(['sessions.referrer_host', 'sessions.utm_source']);
         $sourceVisits = [];
         foreach ((clone $sessionQuery)->get(['referrer_host', 'utm_source']) as $session) {
-            $source = $this->sourceGrouping->classify($session->referrer_host, $session->utm_source)['source'];
+            $source = $this->sourceGrouping->classify($session->referrer_host, $session->utm_source, null, $internalDomains)['source'];
             $sourceVisits[$source] = ($sourceVisits[$source] ?? 0) + 1;
         }
         $sourceCounts = [];
 
         foreach ($conversionRows as $row) {
-            $source = $this->sourceGrouping->classify($row->referrer_host, $row->utm_source)['source'];
+            $source = $this->sourceGrouping->classify($row->referrer_host, $row->utm_source, null, $internalDomains)['source'];
             $sourceCounts[$source] = ($sourceCounts[$source] ?? 0) + 1;
         }
 

@@ -79,16 +79,18 @@ class AnalyticsAggregationService
      */
     private function collectEvents(Project $project, CarbonImmutable $from, CarbonImmutable $to, string $granularity, array &$aggregates): void
     {
+        $internalDomains = $project->domains->pluck('domain')->all();
+
         AnalyticsEvent::query()
             ->where('project_id', $project->getKey())
             ->whereBetween('occurred_at', [$from->utc(), $to->utc()])
             ->orderBy('id')
-            ->chunkById(1000, function ($events) use ($project, $granularity, &$aggregates): void {
+            ->chunkById(1000, function ($events) use ($project, $granularity, $internalDomains, &$aggregates): void {
                 foreach ($events as $event) {
                     $occurredAt = CarbonImmutable::parse((string) $event->getAttribute('occurred_at'));
                     $bucketStart = $this->bucket($occurredAt, $project, $granularity);
                     $isPageView = $event->getAttribute('event_name') === 'page_view';
-                    $source = $this->sourceGrouping->classify($event->getAttribute('referrer_host'), $event->getAttribute('utm_source'), $event->getAttribute('utm_medium'));
+                    $source = $this->sourceGrouping->classify($event->getAttribute('referrer_host'), $event->getAttribute('utm_source'), $event->getAttribute('utm_medium'), $internalDomains);
 
                     $dimensions = [
                         ['overall', ''],
@@ -128,15 +130,17 @@ class AnalyticsAggregationService
      */
     private function collectSessions(Project $project, CarbonImmutable $from, CarbonImmutable $to, string $granularity, array &$aggregates): void
     {
+        $internalDomains = $project->domains->pluck('domain')->all();
+
         AnalyticsSession::query()
             ->where('project_id', $project->getKey())
             ->whereBetween('started_at', [$from->utc(), $to->utc()])
             ->orderBy('id')
-            ->chunkById(1000, function ($sessions) use ($project, $granularity, &$aggregates): void {
+            ->chunkById(1000, function ($sessions) use ($project, $granularity, $internalDomains, &$aggregates): void {
                 foreach ($sessions as $session) {
                     $startedAt = CarbonImmutable::parse((string) $session->getAttribute('started_at'));
                     $bucketStart = $this->bucket($startedAt, $project, $granularity);
-                    $source = $this->sourceGrouping->classify($session->getAttribute('referrer_host'), $session->getAttribute('utm_source'), $session->getAttribute('utm_medium'));
+                    $source = $this->sourceGrouping->classify($session->getAttribute('referrer_host'), $session->getAttribute('utm_source'), $session->getAttribute('utm_medium'), $internalDomains);
                     $dimensions = [
                         ['overall', ''],
                         ['entry', $session->getAttribute('entry_path')],

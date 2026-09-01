@@ -57,6 +57,151 @@ test('a browser event is normalized and stored without raw identity data', funct
         ->and(AnalyticsSession::query()->sole()->country)->toBe('PH');
 });
 
+test('reserved browser signals are sanitized and stay out of engagement metrics', function () {
+    $project = Project::factory()->create([
+        'settings' => ['analytics' => ['autocapture_enabled' => true]],
+    ]);
+    $sessionId = 'browser-session-signals';
+
+    $response = $this->withHeaders(['User-Agent' => 'Mozilla/5.0 Chrome/126 Safari/537.36'])
+        ->postJson(route('api.v1.events.store'), [
+            'site' => $project->site_key,
+            'events' => [
+                [
+                    'event_id' => '11111111-1111-4111-8111-111111111111',
+                    'event_name' => 'page_view',
+                    'session_id' => $sessionId,
+                    'path' => '/checkout?token=private',
+                ],
+                [
+                    'event_id' => '22222222-2222-4222-8222-222222222222',
+                    'event_name' => 'browser_error',
+                    'session_id' => $sessionId,
+                    'path' => '/checkout?token=private',
+                    'properties' => [
+                        'error_type' => 'TypeError',
+                        'script_path' => 'https://example.test/assets/app.js?secret=private',
+                        'line' => 42,
+                        'column' => 8,
+                        'message' => 'private user value',
+                        'stack' => 'private stack',
+                    ],
+                ],
+                [
+                    'event_id' => '33333333-3333-4333-8333-333333333333',
+                    'event_name' => 'request_failure',
+                    'session_id' => $sessionId,
+                    'path' => '/checkout?token=private',
+                    'properties' => [
+                        'method' => 'POST',
+                        'request_path' => '/api/checkout?token=private',
+                        'status' => 500,
+                        'duration_ms' => 812,
+                        'fingerprint' => 'checkout-failure',
+                        'body' => 'private request body',
+                    ],
+                ],
+                [
+                    'event_id' => '44444444-4444-4444-8444-444444444444',
+                    'event_name' => 'web_vital.lcp',
+                    'session_id' => $sessionId,
+                    'path' => '/checkout?token=private',
+                    'properties' => ['value_ms' => 2800, 'text' => 'private text'],
+                ],
+            ],
+        ]);
+
+    $response->assertAccepted()->assertJson(['accepted' => 4]);
+    $events = AnalyticsEvent::query()->orderBy('id')->get();
+
+    expect($events[1]->properties)->toBe([
+        'error_type' => 'TypeError',
+        'script_path' => '/assets/app.js',
+        'line' => 42,
+        'column' => 8,
+    ])->and($events[2]->properties)->toBe([
+        'method' => 'POST',
+        'request_path' => '/api/checkout',
+        'status' => 500,
+        'duration_ms' => 812,
+        'fingerprint' => 'checkout-failure',
+    ])->and($events[3]->properties)->toBe(['value_ms' => 2800]);
+
+    expect(AnalyticsSession::query()->sole()->custom_events)->toBe(0)
+        ->and(AnalyticsSession::query()->sole()->is_bounce)->toBeTrue();
+});
+
+test('autocapture interactions count as engagement while diagnostic signals do not', function () {
+    $project = Project::factory()->create([
+        'settings' => ['analytics' => ['autocapture_enabled' => true]],
+    ]);
+    $payload = [
+        'site' => $project->site_key,
+        'events' => [
+            [
+                'event_id' => '11111111-1111-4111-8111-111111111111',
+                'event_name' => 'page_view',
+                'session_id' => 'browser-session-engagement',
+                'path' => '/pricing',
+            ],
+            [
+                'event_id' => '22222222-2222-4222-8222-222222222222',
+                'event_name' => 'autocapture.click',
+                'session_id' => 'browser-session-engagement',
+                'path' => '/pricing',
+                'properties' => ['kind' => 'click', 'target' => 'try-pro'],
+            ],
+        ],
+    ];
+
+    $this->postJson(route('api.v1.events.store'), $payload)->assertAccepted();
+
+    expect(AnalyticsSession::query()->sole()->custom_events)->toBe(1)
+        ->and(AnalyticsSession::query()->sole()->is_bounce)->toBeFalse();
+});
+
+test('disabled browser signals are filtered at ingestion', function () {
+    $project = Project::factory()->create();
+
+    $response = $this->postJson(route('api.v1.events.store'), [
+        'site' => $project->site_key,
+        'events' => [
+            [
+                'event_id' => '11111111-1111-4111-8111-111111111111',
+                'event_name' => 'page_view',
+                'session_id' => 'browser-session-disabled',
+                'path' => '/pricing',
+            ],
+            [
+                'event_id' => '22222222-2222-4222-8222-222222222222',
+                'event_name' => 'browser_error',
+                'session_id' => 'browser-session-disabled',
+                'path' => '/pricing',
+                'properties' => ['error_type' => 'TypeError'],
+            ],
+        ],
+    ]);
+
+    $response->assertAccepted()->assertJson(['accepted' => 1, 'filtered' => 1]);
+    expect(AnalyticsEvent::query()->pluck('event_name')->all())->toBe(['page_view']);
+});
+
+test('tracker config follows the project setting and origin allowlist', function () {
+    $project = Project::factory()->create([
+        'settings' => ['analytics' => ['autocapture_enabled' => true]],
+    ]);
+    $project->domains()->create(['domain' => 'example.test']);
+
+    $this->withHeaders(['Origin' => 'https://example.test'])
+        ->getJson(route('api.v1.events.config', ['site' => $project->site_key]))
+        ->assertOk()
+        ->assertJson(['autocapture' => true]);
+
+    $this->withHeaders(['Origin' => 'https://not-example.test'])
+        ->getJson(route('api.v1.events.config', ['site' => $project->site_key]))
+        ->assertForbidden();
+});
+
 test('browser user agents are classified', function (string $userAgent, string $browser) {
     $project = Project::factory()->create();
 

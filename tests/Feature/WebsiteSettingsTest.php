@@ -88,6 +88,27 @@ test('owners can save website growth context without replacing other project set
         ->and($project->publicDashboardSections())->toBe(['metrics', 'traffic']);
 });
 
+test('owners can enable privacy-safe behavior signals from website settings', function () {
+    $user = User::factory()->withVerifiedWebsite()->create();
+    $project = $user->projects()->sole();
+
+    $this->actingAs($user)
+        ->get(route('websites.settings.edit', $project))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('website.autocaptureEnabled', false));
+
+    $this->actingAs($user)
+        ->patch(route('websites.settings.update', $project), [
+            'name' => $project->name,
+            'timezone' => $project->timezone,
+            'autocapture_enabled' => true,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('websites.settings.edit', $project));
+
+    expect($project->refresh()->isAutocaptureEnabled())->toBeTrue();
+});
+
 test('website growth context is bounded', function () {
     $user = User::factory()->withVerifiedWebsite()->create();
     $project = $user->projects()->sole();

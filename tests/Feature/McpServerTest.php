@@ -9,12 +9,15 @@ use App\Mcp\Servers\PeekchimpServer;
 use App\Mcp\Tools\BuildContentBrief;
 use App\Mcp\Tools\CreateGoal;
 use App\Mcp\Tools\FindContentOpportunities;
+use App\Mcp\Tools\FindFriction;
 use App\Mcp\Tools\GetAnalyticsOverview;
 use App\Mcp\Tools\GetOrganicSearchOpportunities;
 use App\Mcp\Tools\GetPageDiagnostic;
 use App\Mcp\Tools\GetSetupGuide;
 use App\Mcp\Tools\GetTechnicalSeoIssues;
 use App\Mcp\Tools\GetWebsiteContext;
+use App\Mcp\Tools\InvestigateChange;
+use App\Mcp\Tools\InvestigateFunnel;
 use App\Mcp\Tools\ListWebsites;
 use App\Mcp\Tools\RecommendContentImprovements;
 use App\Mcp\Tools\RecommendConversionExperiments;
@@ -22,6 +25,7 @@ use App\Mcp\Tools\SaveGrowthContext;
 use App\Mcp\Tools\StartWebsiteCrawl;
 use App\Models\AiVisibilityScan;
 use App\Models\AnalyticsEvent;
+use App\Models\Funnel;
 use App\Models\SearchConsoleConnection;
 use App\Models\SearchConsoleMetric;
 use App\Models\User;
@@ -143,6 +147,53 @@ test('analytics tools return structured aggregate data without legacy insights',
             ->missing('data.insights')
             ->etc(),
         );
+});
+
+test('investigation tools return aggregate evidence and preserve tenant boundaries', function () {
+    $user = User::factory()->withVerifiedWebsite()->create();
+    $project = $user->projects()->sole();
+    $funnel = Funnel::factory()->for($project)->create();
+
+    PeekchimpServer::actingAs($user)
+        ->tool(InvestigateFunnel::class, [
+            'project_id' => $project->getKey(),
+            'funnel_id' => $funnel->getKey(),
+            'range' => '30d',
+        ])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('status', 'ok')
+            ->where('data.funnel.id', $funnel->getKey())
+            ->where('data.funnel.largestDropOff', null)
+            ->etc(),
+        );
+
+    PeekchimpServer::actingAs($user)
+        ->tool(InvestigateChange::class, ['project_id' => $project->getKey(), 'range' => '30d'])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('status', 'ok')
+            ->where('data.status', 'comparison_pending')
+            ->etc(),
+        );
+
+    PeekchimpServer::actingAs($user)
+        ->tool(FindFriction::class, ['project_id' => $project->getKey(), 'range' => '30d'])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('status', 'ok')
+            ->where('data.status', 'no_findings')
+            ->where('data.findings', [])
+            ->etc(),
+        );
+
+    $otherUser = User::factory()->withVerifiedWebsite()->create();
+    PeekchimpServer::actingAs($otherUser)
+        ->tool(InvestigateFunnel::class, [
+            'project_id' => $project->getKey(),
+            'funnel_id' => $funnel->getKey(),
+        ])
+        ->assertHasErrors(['not available']);
 });
 
 test('report ranges are bounded and reject invalid custom dates', function () {

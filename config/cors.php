@@ -2,7 +2,7 @@
 
 return [
     'paths' => ['api/*'],
-    'allowed_methods' => ['POST', 'OPTIONS'],
+    'allowed_methods' => ['GET', 'POST', 'OPTIONS'],
     'allowed_origins' => ['*'],
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['Content-Type'],

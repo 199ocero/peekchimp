@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StoreEventsRequest;
 use App\Models\Project;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
@@ -50,6 +51,29 @@ class EventController extends Controller
 
         return response()
             ->json(Arr::only($result, ['accepted', 'filtered', 'duplicate']), 202)
+            ->withHeaders($this->corsHeaders($origin));
+    }
+
+    public function config(Request $request): JsonResponse
+    {
+        $origin = $request->header('Origin');
+        $project = Project::query()
+            ->where('site_key', $request->string('site')->toString())
+            ->where('is_active', true)
+            ->with('domains')
+            ->first();
+
+        if (! $project) {
+            return response()->json(['message' => 'Unknown site.'], 404)
+                ->withHeaders($this->corsHeaders($origin));
+        }
+
+        if (! $this->originAllowed($project, $origin)) {
+            return response()->json(['message' => 'Origin is not allowed.'], 403)
+                ->withHeaders($this->corsHeaders($origin));
+        }
+
+        return response()->json(['autocapture' => $project->isAutocaptureEnabled()])
             ->withHeaders($this->corsHeaders($origin));
     }
 
@@ -109,7 +133,7 @@ class EventController extends Controller
     {
         return [
             'Access-Control-Allow-Origin' => $origin ?: '*',
-            'Access-Control-Allow-Methods' => 'POST, OPTIONS',
+            'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers' => 'Content-Type',
             'Access-Control-Max-Age' => '86400',
             'Vary' => 'Origin',

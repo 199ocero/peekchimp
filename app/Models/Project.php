@@ -94,6 +94,11 @@ class Project extends Model
         return $this->public_share_enabled_at !== null;
     }
 
+    public function isAutocaptureEnabled(): bool
+    {
+        return data_get($this->settings ?? [], 'analytics.autocapture_enabled') === true;
+    }
+
     /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {

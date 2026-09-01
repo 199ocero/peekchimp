@@ -30,6 +30,7 @@ class UpdateWebsiteSettingsRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:120'],
             'timezone' => ['required', 'timezone:all'],
+            'autocapture_enabled' => ['sometimes', 'boolean'],
             'growth_context' => ['sometimes', 'array'],
             'growth_context.audience' => ['nullable', 'string', 'max:2000'],
             'growth_context.products_services' => ['nullable', 'string', 'max:3000'],
@@ -41,7 +42,7 @@ class UpdateWebsiteSettingsRequest extends FormRequest
     }
 
     /**
-     * @return array{name: string, timezone: string, growth_context?: array{audience: string, products_services: string, value_proposition: string, brand_voice: string, primary_conversion_goals: array<int, string>}}
+     * @return array{name: string, timezone: string, autocapture_enabled?: bool, growth_context?: array{audience: string, products_services: string, value_proposition: string, brand_voice: string, primary_conversion_goals: array<int, string>}}
      */
     public function website(): array
     {
@@ -49,6 +50,10 @@ class UpdateWebsiteSettingsRequest extends FormRequest
             'name' => $this->string('name')->toString(),
             'timezone' => $this->string('timezone')->toString(),
         ];
+
+        if ($this->has('autocapture_enabled')) {
+            $website['autocapture_enabled'] = $this->boolean('autocapture_enabled');
+        }
 
         if ($this->has('growth_context')) {
             $conversionGoals = $this->input('growth_context.primary_conversion_goals', []);

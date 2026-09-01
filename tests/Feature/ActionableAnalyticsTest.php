@@ -6,9 +6,11 @@ use App\Models\Funnel;
 use App\Models\Goal;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\Analytics\BrowserSignalAnalyticsService;
 use App\Services\Analytics\FunnelAnalyticsService;
 use App\Services\Analytics\GoalAnalyticsService;
 use App\Services\Analytics\GoalConversionService;
+use App\Services\Analytics\ProductInvestigationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -59,6 +61,144 @@ test('funnel analytics counts ordered session progression and drop-off', functio
         ->and($summary['steps'][0]['progressed'])->toBe(1)
         ->and($summary['steps'][1]['users'])->toBe(1)
         ->and($summary['conversionRate'])->toBe(50.0);
+});
+
+test('browser signals return aggregate p75, failure, and interaction data', function () {
+    $project = Project::factory()->create();
+    $now = CarbonImmutable::now();
+
+    for ($index = 0; $index < 20; $index++) {
+        $sessionId = 'signal-session-'.$index;
+        AnalyticsSession::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'started_at' => $now->subMinutes(10),
+            'last_seen_at' => $now,
+        ]);
+        AnalyticsEvent::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'event_name' => 'page_view',
+            'path' => '/checkout',
+            'occurred_at' => $now->subMinutes(5),
+        ]);
+        AnalyticsEvent::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'event_name' => 'web_vital.lcp',
+            'path' => '/checkout',
+            'properties' => ['value_ms' => $index < 10 ? 2000 : 3000],
+            'occurred_at' => $now->subMinutes(4),
+        ]);
+        AnalyticsEvent::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'event_name' => 'autocapture.click',
+            'path' => '/checkout',
+            'properties' => ['kind' => 'submit', 'target' => 'pay-now'],
+            'occurred_at' => $now->subMinutes(3),
+        ]);
+        if ($index >= 10) {
+            AnalyticsEvent::factory()->for($project)->create([
+                'session_id' => $sessionId,
+                'event_name' => 'autocapture.submit',
+                'path' => '/checkout',
+                'properties' => ['target' => 'checkout-form'],
+                'occurred_at' => $now->subMinutes(2),
+            ]);
+        }
+        if ($index < 10) {
+            AnalyticsEvent::factory()->for($project)->create([
+                'session_id' => $sessionId,
+                'event_name' => 'request_failure',
+                'path' => '/checkout',
+                'properties' => [
+                    'method' => 'POST',
+                    'request_path' => '/api/checkout',
+                    'status' => 500,
+                    'fingerprint' => 'checkout-failure',
+                ],
+                'occurred_at' => $now->subMinute(),
+            ]);
+        }
+    }
+
+    $signals = app(BrowserSignalAnalyticsService::class)->page($project, '/checkout', $now->subDay(), $now->addMinute());
+
+    expect($signals['status'])->toBe('ok')
+        ->and($signals['performance']['lcp'])->toMatchArray(['samples' => 20, 'p75Ms' => 3000])
+        ->and($signals['behavior']['submitAttempts'])->toBe(20)
+        ->and($signals['behavior']['submitAttemptsWithoutSubmission'])->toBe(10)
+        ->and($signals['failures']['affectedSessions'])->toBe(10)
+        ->and($signals['failures']['requestFailures'][0]['sessions'])->toBe(10);
+});
+
+test('funnel investigation identifies a materially worse segment', function () {
+    $project = Project::factory()->create();
+    $funnel = Funnel::factory()->for($project)->create();
+    $funnel->steps()->createMany([
+        ['position' => 1, 'name' => 'Landing', 'type' => 'url', 'path' => '/', 'path_operator' => 'exact'],
+        ['position' => 2, 'name' => 'Signup', 'type' => 'event', 'event_name' => 'signup_completed', 'path_operator' => 'exact'],
+    ]);
+    $now = CarbonImmutable::now();
+
+    for ($index = 0; $index < 40; $index++) {
+        $sessionId = 'funnel-investigation-'.$index;
+        $device = $index < 20 ? 'mobile' : 'desktop';
+        AnalyticsSession::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'device' => $device,
+            'started_at' => $now->subMinutes(10),
+            'last_seen_at' => $now,
+        ]);
+        AnalyticsEvent::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'event_name' => 'page_view',
+            'path' => '/',
+            'occurred_at' => $now->subMinutes(5),
+        ]);
+        if ($index >= 20) {
+            AnalyticsEvent::factory()->for($project)->create([
+                'session_id' => $sessionId,
+                'event_name' => 'signup_completed',
+                'path' => '/',
+                'occurred_at' => $now->subMinutes(4),
+            ]);
+        }
+    }
+
+    $investigation = app(FunnelAnalyticsService::class)->investigate($funnel->fresh('steps'), $now->subDay(), $now->addMinute());
+
+    expect($investigation['largestDropOff'])->toMatchArray(['users' => 40, 'dropOff' => 20, 'dropOffPercentage' => 50.0])
+        ->and($investigation['segments'][0])->toMatchArray(['dimension' => 'device', 'value' => 'mobile', 'gap' => 100.0]);
+});
+
+test('friction investigation reports only thresholded aggregate findings', function () {
+    $project = Project::factory()->create();
+    $now = CarbonImmutable::now();
+
+    for ($index = 0; $index < 20; $index++) {
+        $sessionId = 'friction-session-'.$index;
+        AnalyticsSession::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'started_at' => $now->subMinutes(10),
+            'last_seen_at' => $now,
+        ]);
+        AnalyticsEvent::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'event_name' => 'page_view',
+            'path' => '/checkout',
+            'occurred_at' => $now->subMinutes(5),
+        ]);
+        AnalyticsEvent::factory()->for($project)->create([
+            'session_id' => $sessionId,
+            'event_name' => 'web_vital.lcp',
+            'path' => '/checkout',
+            'properties' => ['value_ms' => 3000],
+            'occurred_at' => $now->subMinutes(4),
+        ]);
+    }
+
+    $findings = app(ProductInvestigationService::class)->findFriction($project, $now->subDay(), $now->addMinute());
+
+    expect($findings['status'])->toBe('ok')
+        ->and($findings['findings'][0])->toMatchArray(['category' => 'performance', 'path' => '/checkout', 'affectedSessions' => 20]);
 });
 
 test('goal analytics reports session conversion rate', function () {

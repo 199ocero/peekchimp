@@ -8,6 +8,15 @@ use Illuminate\Support\Str;
 
 class EventNormalizer
 {
+    /** @var array<string, array<int, string>> */
+    private const RESERVED_PROPERTIES = [
+        'autocapture.click' => ['kind', 'tag', 'role', 'type', 'target', 'destination_host', 'file_extension'],
+        'autocapture.submit' => ['target', 'method', 'action_path'],
+        'web_vital.lcp' => ['value_ms'],
+        'browser_error' => ['error_type', 'script_path', 'line', 'column', 'fingerprint'],
+        'request_failure' => ['method', 'request_path', 'status', 'duration_ms', 'fingerprint'],
+    ];
+
     public function __construct(private readonly CountryResolver $countryResolver) {}
 
     /**
@@ -34,16 +43,25 @@ class EventNormalizer
         }
 
         $customProperties = [];
+        $allowedProperties = self::RESERVED_PROPERTIES[$event['event_name'] ?? ''] ?? null;
 
         foreach ($properties as $key => $value) {
             if (! is_string($key) || in_array($key, ['path', 'referrer'], true)) {
                 continue;
             }
 
+            if ($allowedProperties !== null && ! in_array($key, $allowedProperties, true)) {
+                continue;
+            }
+
             if (is_string($value)) {
-                $customProperties[Str::limit($key, 64, '')] = Str::limit($value, 256, '');
+                $customProperties[Str::limit($key, 64, '')] = match ($key) {
+                    'action_path', 'request_path', 'script_path' => $this->path($value),
+                    'destination_host' => $this->propertyHost($value),
+                    default => Str::limit($value, 256, ''),
+                };
             } elseif (is_int($value) || is_float($value) || is_bool($value)) {
-                $customProperties[Str::limit($key, 64, '')] = $value;
+                $customProperties[Str::limit($key, 64, '')] = $this->propertyNumber($key, $value);
             }
 
             if (count($customProperties) >= 20) {
@@ -92,6 +110,24 @@ class EventNormalizer
         $host = parse_url($value, PHP_URL_HOST);
 
         return is_string($host) ? Str::lower(Str::limit($host, 255, '')) : null;
+    }
+
+    private function propertyHost(string $value): ?string
+    {
+        $host = parse_url('https://'.trim($value), PHP_URL_HOST);
+
+        return is_string($host) && preg_match('/^[a-z0-9.-]+$/i', $host) === 1
+            ? Str::lower(Str::limit($host, 255, ''))
+            : null;
+    }
+
+    private function propertyNumber(string $key, int|float|bool $value): int|float|bool
+    {
+        if (! is_numeric($value) || ! in_array($key, ['value_ms', 'line', 'column', 'status', 'duration_ms'], true)) {
+            return $value;
+        }
+
+        return max(0, min(2147483647, $value));
     }
 
     private function stringValue(mixed $value, int $length): ?string

@@ -47,6 +47,7 @@ const props = defineProps<{
         domain: string | null;
         siteKey: string;
         isVerified: boolean;
+        autocaptureEnabled: boolean;
         growthContext: {
             audience: string;
             products_services: string;
@@ -90,6 +91,7 @@ const props = defineProps<{
 const generalForm = useForm({
     name: props.website.name,
     timezone: props.website.timezone,
+    autocapture_enabled: props.website.autocaptureEnabled,
 });
 const contextForm = useForm({
     name: props.website.name,
@@ -407,6 +409,84 @@ async function copy(value: string): Promise<void> {
                                 <span class="font-mono text-xs text-foreground">
                                     {{ website.domain ?? 'Not set' }}
                                 </span>
+                            </div>
+
+                            <div
+                                class="rounded-xl border border-primary/25 bg-primary/5 p-4"
+                            >
+                                <div class="flex items-start gap-3">
+                                    <span
+                                        class="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary"
+                                        aria-hidden="true"
+                                    >
+                                        <ShieldCheck class="size-4" />
+                                    </span>
+                                    <div class="min-w-0">
+                                        <div
+                                            class="flex flex-wrap items-center gap-2"
+                                        >
+                                            <h3 class="text-sm font-medium">
+                                                Behavioral signals
+                                            </h3>
+                                            <span
+                                                class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-primary uppercase"
+                                            >
+                                                {{
+                                                    generalForm.autocapture_enabled
+                                                        ? 'Enabled'
+                                                        : 'Disabled'
+                                                }}
+                                            </span>
+                                        </div>
+                                        <p
+                                            class="mt-1 text-xs leading-5 text-muted-foreground"
+                                        >
+                                            Give Peekchimp enough evidence to
+                                            explain where visitors get stuck,
+                                            without recording what they type.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <label
+                                    class="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card/60 p-3 transition-colors hover:bg-card"
+                                >
+                                    <Checkbox
+                                        id="autocapture-enabled"
+                                        aria-describedby="autocapture-description"
+                                        :model-value="
+                                            generalForm.autocapture_enabled
+                                        "
+                                        :disabled="generalForm.processing"
+                                        class="mt-0.5"
+                                        @update:model-value="
+                                            (value) =>
+                                                (generalForm.autocapture_enabled =
+                                                    value === true)
+                                        "
+                                    />
+                                    <span>
+                                        <span class="block text-sm font-medium"
+                                            >Collect privacy-safe behavior
+                                            signals</span
+                                        >
+                                        <span
+                                            id="autocapture-description"
+                                            class="mt-1 block text-xs leading-5 text-muted-foreground"
+                                        >
+                                            Clicks, form submits, LCP, and
+                                            failed requests are summarized by
+                                            page and session. Field values,
+                                            request bodies, messages, and stacks
+                                            are never collected.
+                                        </span>
+                                    </span>
+                                </label>
+                                <InputError
+                                    :message="
+                                        generalForm.errors.autocapture_enabled
+                                    "
+                                />
                             </div>
 
                             <div class="flex justify-end">

@@ -5,6 +5,7 @@ namespace App\Services\Mcp;
 use App\Models\Project;
 use App\Models\SearchConsoleMetric;
 use App\Models\WebsitePageSnapshot;
+use App\Services\Analytics\BrowserSignalAnalyticsService;
 use App\Services\Websites\WebsiteSnapshotService;
 use App\Services\Websites\WebsiteUrlNormalizer;
 use Carbon\CarbonImmutable;
@@ -17,6 +18,7 @@ class PageDiagnosticService
     public function __construct(
         private readonly WebsiteSnapshotService $snapshots,
         private readonly WebsiteUrlNormalizer $normalizer,
+        private readonly BrowserSignalAnalyticsService $signals,
     ) {}
 
     /** @return array<string, mixed> */
@@ -31,6 +33,7 @@ class PageDiagnosticService
                 'freshness' => $this->snapshots->freshness($project),
                 'page' => null,
                 'analytics' => $this->analytics($project, $path, $from, $to),
+                'signals' => $this->signals->page($project, $path, $from, $to),
                 'search' => $this->search($project, $path, $from, $to),
                 'goals' => $this->goals($project, $path),
                 'funnelSteps' => $this->funnelSteps($project, $path),
@@ -43,6 +46,7 @@ class PageDiagnosticService
             'freshness' => $this->snapshots->freshness($project),
             'page' => $this->snapshot($snapshot),
             'analytics' => $this->analytics($project, $path, $from, $to),
+            'signals' => $this->signals->page($project, $path, $from, $to),
             'search' => $this->search($project, $path, $from, $to),
             'goals' => $this->goals($project, $path),
             'funnelSteps' => $this->funnelSteps($project, $path),

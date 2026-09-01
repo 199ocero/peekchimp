@@ -38,6 +38,7 @@ class WebsiteSettingsController extends Controller
                 'domain' => $project->domains->first()?->domain,
                 'siteKey' => $project->site_key,
                 'isVerified' => $project->domains->contains(fn ($domain): bool => $domain->is_verified),
+                'autocaptureEnabled' => $project->isAutocaptureEnabled(),
                 'growthContext' => $project->growthContext(),
             ],
             'timezones' => DateTimeZone::listIdentifiers(),

@@ -52,10 +52,17 @@ class IngestEventsAction
         }
 
         $accepted = 0;
+        $filtered = 0;
         $acceptedPageView = false;
         $duplicate = 0;
 
         foreach ($events as $event) {
+            if ($this->isAutocaptureEvent((string) ($event['event_name'] ?? '')) && ! $project->isAutocaptureEnabled()) {
+                $filtered++;
+
+                continue;
+            }
+
             $normalized = $this->eventNormalizer->normalize($event, $request, $now);
             $sessionId = $this->sessionIdentifier->make(
                 $project,
@@ -106,7 +113,7 @@ class IngestEventsAction
 
         return [
             'accepted' => $accepted,
-            'filtered' => 0,
+            'filtered' => $filtered,
             'duplicate' => $duplicate,
             'accepted_page_view' => $acceptedPageView,
         ];
@@ -175,8 +182,9 @@ class IngestEventsAction
                 if ($isPageView && $session->entry_path === null) {
                     $session->entry_path = $event['path'];
                 }
+                $isEngagementEvent = $isPageView || ! $this->isDiagnosticEvent((string) $event['event_name']);
                 $session->pageviews = (int) $session->pageviews + ($isPageView ? 1 : 0);
-                $session->custom_events = (int) $session->custom_events + ($isPageView ? 0 : 1);
+                $session->custom_events = (int) $session->custom_events + ($isEngagementEvent && ! $isPageView ? 1 : 0);
                 $startedAt = CarbonImmutable::parse((string) $session->started_at);
                 $duration = $occurredAt->getTimestamp() - $startedAt->getTimestamp();
                 $session->duration_seconds = max(0, $duration);
@@ -186,5 +194,22 @@ class IngestEventsAction
         } catch (LockTimeoutException) {
             // A contended session will be repaired by its next event; the raw event is durable.
         }
+    }
+
+    private function isDiagnosticEvent(string $eventName): bool
+    {
+        return in_array($eventName, ['browser_error', 'request_failure'], true)
+            || str_starts_with($eventName, 'web_vital.');
+    }
+
+    private function isAutocaptureEvent(string $eventName): bool
+    {
+        return in_array($eventName, [
+            'autocapture.click',
+            'autocapture.submit',
+            'browser_error',
+            'request_failure',
+            'web_vital.lcp',
+        ], true);
     }
 }

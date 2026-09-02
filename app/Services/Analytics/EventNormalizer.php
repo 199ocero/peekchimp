@@ -29,6 +29,7 @@ class EventNormalizer
         $platform = (string) ($event['platform'] ?? 'web');
         $path = $event['path'] ?? $properties['path'] ?? null;
         $referrer = $event['referrer'] ?? $properties['referrer'] ?? null;
+        $location = $this->countryResolver->resolveLocation($request);
 
         $occurredAt = isset($event['occurred_at'])
             ? CarbonImmutable::parse((string) $event['occurred_at'])
@@ -76,7 +77,9 @@ class EventNormalizer
             'client_session_id' => isset($event['session_id']) ? (string) $event['session_id'] : null,
             'path' => $this->path($path),
             'referrer_host' => $this->host($referrer),
-            'country' => $this->countryResolver->resolve($request),
+            'country' => $location['country'],
+            'latitude' => $location['latitude'],
+            'longitude' => $location['longitude'],
             'device' => $this->device((string) $request->userAgent()),
             'browser' => $this->browser((string) $request->userAgent()),
             'operating_system' => $this->operatingSystem((string) $request->userAgent()),

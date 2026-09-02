@@ -32,6 +32,8 @@ class AnalyticsSessionFactory extends Factory
             'exit_path' => '/pricing',
             'referrer_host' => null,
             'country' => 'US',
+            'latitude' => null,
+            'longitude' => null,
             'device' => 'desktop',
             'browser' => 'Chrome',
             'operating_system' => 'macOS',

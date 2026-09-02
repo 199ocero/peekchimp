@@ -51,6 +51,11 @@ class DashboardController extends Controller
                 $analytics['range']['from'],
                 $analytics['range']['to'],
             ), 'search-performance'),
+            'visitorMap' => fn (): array => $this->dashboardQuery->visitorMap($project),
+            'mapbox' => [
+                'accessToken' => $user->workspaceOwnerUser()->mapbox_public_token,
+                'canManage' => (bool) $user->is_admin,
+            ],
             'filters' => $filters,
         ]);
     }

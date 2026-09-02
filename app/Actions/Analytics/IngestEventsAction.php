@@ -146,6 +146,8 @@ class IngestEventsAction
                     $session->exit_path = $isPageView ? $event['path'] : null;
                     $session->referrer_host = $event['referrer_host'];
                     $session->country = $event['country'];
+                    $session->latitude = $event['latitude'];
+                    $session->longitude = $event['longitude'];
                     $session->device = $event['device'];
                     $session->browser = $event['browser'];
                     $session->operating_system = $event['operating_system'];
@@ -156,6 +158,11 @@ class IngestEventsAction
 
                 if ($session->country === null && $event['country'] !== null) {
                     $session->country = $event['country'];
+                }
+
+                if ($session->latitude === null && $event['latitude'] !== null) {
+                    $session->latitude = $event['latitude'];
+                    $session->longitude = $event['longitude'];
                 }
 
                 foreach (['referrer_host', 'utm_source', 'utm_medium', 'utm_campaign'] as $attributionField) {

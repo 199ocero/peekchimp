@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Deferred, Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router, usePoll } from '@inertiajs/vue3';
 import {
     CalendarDays,
     CircleGauge,
@@ -18,6 +18,7 @@ import {
 import { computed, ref, watch } from 'vue';
 import DashboardBreakdownCard from '@/components/dashboard/DashboardBreakdownCard.vue';
 import DashboardTrafficChart from '@/components/dashboard/DashboardTrafficChart.vue';
+import DashboardVisitorMap from '@/components/dashboard/DashboardVisitorMap.vue';
 import MetricTrendCard from '@/components/dashboard/MetricTrendCard.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -163,6 +164,19 @@ type OrganicLandingPage = {
         position: number | null;
     }>;
 };
+type VisitorMap = {
+    totalVisitors: number;
+    locatedVisitors: number;
+    visitors: Array<{
+        id: string;
+        latitude: number;
+        longitude: number;
+        country: string | null;
+        lastSeenAt: string;
+        active: boolean;
+        avatar: number;
+    }>;
+};
 
 const props = defineProps<{
     project: {
@@ -173,6 +187,11 @@ const props = defineProps<{
     };
     analytics: Analytics;
     searchPerformance?: SearchPerformance;
+    visitorMap: VisitorMap;
+    mapbox: {
+        accessToken: string | null;
+        canManage: boolean;
+    };
 }>();
 
 defineOptions({
@@ -182,6 +201,11 @@ defineOptions({
 });
 
 const selectedRange = ref(props.analytics.range.key);
+
+if (props.mapbox.accessToken) {
+    usePoll(60_000, { only: ['visitorMap'] });
+}
+
 const isManualRefreshing = ref(false);
 const isChangingRange = ref(false);
 const activePageTab = ref<'top' | 'entry' | 'exit'>('top');
@@ -494,7 +518,7 @@ function loadRange(range: string): void {
 function refresh(): void {
     isManualRefreshing.value = true;
     router.reload({
-        only: ['analytics', 'searchPerformance'],
+        only: ['analytics', 'searchPerformance', 'visitorMap'],
         onFinish: () => {
             isManualRefreshing.value = false;
         },
@@ -636,11 +660,25 @@ watch(activePageTab, () => {
                 />
             </section>
 
-            <section aria-label="Traffic over time">
-                <DashboardTrafficChart
-                    :range="analytics.range"
-                    :metrics="analytics.metrics"
-                    :timeseries="analytics.timeseries"
+            <section
+                class="grid items-stretch gap-4 lg:grid-cols-2"
+                aria-label="Traffic and visitor locations"
+            >
+                <div class="h-full" aria-label="Traffic over time">
+                    <DashboardTrafficChart
+                        class="h-full"
+                        :range="analytics.range"
+                        :metrics="analytics.metrics"
+                        :timeseries="analytics.timeseries"
+                    />
+                </div>
+                <DashboardVisitorMap
+                    :access-token="mapbox.accessToken"
+                    :can-manage="mapbox.canManage"
+                    :timezone="project.timezone"
+                    :total-visitors="visitorMap.totalVisitors"
+                    :located-visitors="visitorMap.locatedVisitors"
+                    :visitors="visitorMap.visitors"
                 />
             </section>
 

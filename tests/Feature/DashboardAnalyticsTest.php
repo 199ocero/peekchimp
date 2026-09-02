@@ -129,6 +129,55 @@ test('dashboard counts distinct visitors active in the last five minutes', funct
         ->where('analytics.metrics.bounceRate', 50));
 });
 
+test('visitor map shows located visitors from the current project day', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-08-23 12:00:00', 'UTC'));
+
+    $user = User::factory()->create(['email_verified_at' => now()]);
+    $project = Project::factory()->create([
+        'user_id' => $user->id,
+        'timezone' => 'Asia/Manila',
+    ]);
+    $project->domains()->create(['domain' => 'example.test', 'is_verified' => true]);
+
+    AnalyticsSession::factory()->create([
+        'project_id' => $project->id,
+        'visitor_id' => 'active-located',
+        'last_seen_at' => now()->subMinutes(2),
+        'latitude' => 14.5995,
+        'longitude' => 120.9842,
+        'country' => 'PH',
+    ]);
+    AnalyticsSession::factory()->create([
+        'project_id' => $project->id,
+        'visitor_id' => 'recent-located',
+        'last_seen_at' => now()->subMinutes(6),
+        'latitude' => 35.6762,
+        'longitude' => 139.6503,
+        'country' => 'JP',
+    ]);
+    AnalyticsSession::factory()->create([
+        'project_id' => $project->id,
+        'visitor_id' => 'unlocated',
+        'last_seen_at' => now()->subHour(),
+    ]);
+    AnalyticsSession::factory()->create([
+        'project_id' => $project->id,
+        'visitor_id' => 'before-local-midnight',
+        'last_seen_at' => CarbonImmutable::parse('2026-08-22 15:59:59', 'UTC'),
+        'latitude' => 40.7128,
+        'longitude' => -74.006,
+    ]);
+
+    $this->actingAs($user)->get(route('dashboard'))->assertInertia(fn ($page) => $page
+        ->where('visitorMap.totalVisitors', 3)
+        ->where('visitorMap.locatedVisitors', 2)
+        ->has('visitorMap.visitors', 2)
+        ->where('visitorMap.visitors.0.country', 'PH')
+        ->where('visitorMap.visitors.0.active', true)
+        ->where('visitorMap.visitors.1.country', 'JP')
+        ->where('visitorMap.visitors.1.active', false));
+});
+
 test('dashboard compares each top metric with its previous period', function () {
     $this->travelTo(CarbonImmutable::parse('2026-08-23 12:00:00', 'UTC'));
 

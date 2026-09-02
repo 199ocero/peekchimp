@@ -4,6 +4,7 @@ use App\Jobs\RunAiVisibilityScan;
 use App\Models\AnalyticsEvent;
 use App\Models\AnalyticsSession;
 use App\Models\Project;
+use App\Services\Analytics\CountryResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -55,6 +56,26 @@ test('a browser event is normalized and stored without raw identity data', funct
     expect($event->getAttributes())->not->toHaveKeys(['ip_address', 'user_agent']);
     expect(AnalyticsSession::query()->count())->toBe(1)
         ->and(AnalyticsSession::query()->sole()->country)->toBe('PH');
+});
+
+test('approximate city coordinates are stored only on the session', function () {
+    $project = Project::factory()->create();
+    $resolver = $this->mock(CountryResolver::class);
+    $resolver->shouldReceive('resolveLocation')->once()->andReturn([
+        'country' => 'PH',
+        'latitude' => 14.5995,
+        'longitude' => 120.9842,
+    ]);
+
+    $this->postJson(route('api.v1.events.store'), analyticsPayload($project->site_key))
+        ->assertAccepted();
+
+    $session = AnalyticsSession::query()->sole();
+
+    expect($session->latitude)->toBe(14.5995)
+        ->and($session->longitude)->toBe(120.9842)
+        ->and(AnalyticsEvent::query()->sole()->getAttributes())
+        ->not->toHaveKeys(['latitude', 'longitude', 'ip_address']);
 });
 
 test('reserved browser signals are sanitized and stay out of engagement metrics', function () {

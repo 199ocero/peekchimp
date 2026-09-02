@@ -11,32 +11,62 @@ class DbIpCountryLookup
      * @var array<int, string>
      */
     private const SUPPORTED_DATABASE_TYPES = [
-        'DBIP-Country-Lite',
-        'DBIP-Country',
-        'GeoLite2-Country',
-        'GeoIP2-Country',
+        'DBIP-City-Lite',
+        'DBIP-City',
+        'GeoLite2-City',
+        'GeoIP2-City',
     ];
 
     public function find(string $ipAddress): ?string
     {
+        return $this->findLocation($ipAddress)['country'];
+    }
+
+    /** @return array{country: string|null, latitude: float|null, longitude: float|null} */
+    public function findLocation(string $ipAddress): array
+    {
+        $empty = ['country' => null, 'latitude' => null, 'longitude' => null];
+
         if (! $this->isPublicIpAddress($ipAddress)) {
-            return null;
+            return $empty;
         }
 
         $databasePath = (string) config('analytics.geolocation.database_path', '');
 
         if ($databasePath === '' || ! is_file($databasePath)) {
-            return null;
+            return $empty;
         }
+
+        $reader = null;
 
         try {
             $reader = new Reader($databasePath);
-            $country = $reader->country($ipAddress)->country->isoCode;
-            $reader->close();
+            $isCityDatabase = str_contains($reader->metadata()->databaseType, 'City');
+            $latitude = null;
+            $longitude = null;
 
-            return is_string($country) ? strtoupper($country) : null;
+            if ($isCityDatabase) {
+                $record = $reader->city($ipAddress);
+                $country = $record->country->isoCode;
+                $latitude = is_numeric($record->location->latitude)
+                    ? (float) $record->location->latitude
+                    : null;
+                $longitude = is_numeric($record->location->longitude)
+                    ? (float) $record->location->longitude
+                    : null;
+            } else {
+                $country = $reader->country($ipAddress)->country->isoCode;
+            }
+
+            return [
+                'country' => is_string($country) ? strtoupper($country) : null,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+            ];
         } catch (Throwable) {
-            return null;
+            return $empty;
+        } finally {
+            $reader?->close();
         }
     }
 

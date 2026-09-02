@@ -116,6 +116,50 @@ class DashboardQuery
         });
     }
 
+    /**
+     * @return array{totalVisitors: int, locatedVisitors: int, visitors: array<int, array{id: string, latitude: float, longitude: float, country: string|null, lastSeenAt: string, active: bool, avatar: int}>}
+     */
+    public function visitorMap(Project $project): array
+    {
+        $now = CarbonImmutable::now($project->timezone);
+        $query = AnalyticsSession::query()
+            ->where('project_id', $project->getKey())
+            ->whereBetween('last_seen_at', [
+                $this->databaseTimestamp($now->startOfDay()),
+                $this->databaseTimestamp($now),
+            ]);
+        $totalVisitors = (clone $query)->distinct('visitor_id')->count('visitor_id');
+        $activeSince = $now->utc()->subMinutes(5);
+        $visitors = $query
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->latest('last_seen_at')
+            ->get(['visitor_id', 'latitude', 'longitude', 'country', 'last_seen_at'])
+            ->unique('visitor_id')
+            ->map(function (AnalyticsSession $session) use ($activeSince): array {
+                $id = hash_hmac('sha256', $session->visitor_id, (string) config('app.key'));
+                $lastSeenAt = CarbonImmutable::parse($session->getAttribute('last_seen_at'));
+
+                return [
+                    'id' => $id,
+                    'latitude' => (float) $session->latitude,
+                    'longitude' => (float) $session->longitude,
+                    'country' => $session->country,
+                    'lastSeenAt' => $lastSeenAt->toIso8601String(),
+                    'active' => $lastSeenAt->gte($activeSince),
+                    'avatar' => hexdec(substr($id, 0, 2)) % 8,
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'totalVisitors' => $totalVisitors,
+            'locatedVisitors' => count($visitors),
+            'visitors' => $visitors,
+        ];
+    }
+
     /** @param array<string, mixed> $filters */
     private function hasTraffic(Project $project, CarbonImmutable $from, CarbonImmutable $to, array $filters): bool
     {

@@ -36,7 +36,7 @@ return [
     'geolocation' => [
         'database_path' => env(
             'PEEKCHIMP_GEOIP_DATABASE_PATH',
-            storage_path('app/private/geoip/dbip-country-lite.mmdb'),
+            storage_path('app/private/geoip/dbip-city-lite.mmdb'),
         ),
         'database_url' => env('PEEKCHIMP_GEOIP_DATABASE_URL'),
         'country_headers' => array_values(array_filter(array_map(

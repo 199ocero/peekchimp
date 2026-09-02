@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('analytics:geoip:update')]
-#[Description('Download the latest country database used for analytics geolocation')]
+#[Description('Download the latest city database used for analytics geolocation')]
 class UpdateGeoIpDatabase extends Command
 {
     public function handle(GeoIpDatabaseUpdater $updater): int
@@ -22,7 +22,7 @@ class UpdateGeoIpDatabase extends Command
             return self::FAILURE;
         }
 
-        $this->info('GeoIP country database updated.');
+        $this->info('GeoIP city database updated.');
 
         return self::SUCCESS;
     }

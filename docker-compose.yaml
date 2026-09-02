@@ -87,7 +87,8 @@ services:
     volumes:
       - geoip-data:/var/www/html/storage/app/private/geoip
       - passport-keys:/var/www/html/storage/app/private/passport
-    command: php artisan schedule:work
+    command: >-
+      sh -lc "if [ ! -s storage/app/private/geoip/dbip-city-lite.mmdb ]; then php artisan analytics:geoip:update --no-interaction; fi; exec php artisan schedule:work"
 
   postgres:
     image: postgres:17-alpine

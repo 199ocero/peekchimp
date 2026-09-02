@@ -9,7 +9,7 @@ test('the GeoIP update command installs the latest database', function () {
     $updater->shouldReceive('update')->once();
 
     $this->artisan('analytics:geoip:update')
-        ->expectsOutput('GeoIP country database updated.')
+        ->expectsOutput('GeoIP city database updated.')
         ->assertSuccessful();
 });
 

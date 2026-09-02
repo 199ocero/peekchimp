@@ -34,8 +34,8 @@ test('it falls back to the previous month and installs the database atomically',
 
         expect(File::get($databasePath))->toBe('valid database');
         Http::assertSentCount(2);
-        Http::assertSent(fn ($request): bool => str_contains($request->url(), '2026-08'));
-        Http::assertSent(fn ($request): bool => str_contains($request->url(), '2026-07'));
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'dbip-city-lite-2026-08'));
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'dbip-city-lite-2026-07'));
     } finally {
         File::deleteDirectory($directory);
     }
@@ -56,9 +56,17 @@ test('it preserves the current database when an update is invalid', function () 
 
     try {
         expect(fn () => (new GeoIpDatabaseUpdater($databaseLookup))->update())
-            ->toThrow(RuntimeException::class, 'not a supported country database')
+            ->toThrow(RuntimeException::class, 'not a supported city database')
             ->and(File::get($databasePath))->toBe('current database');
     } finally {
         File::deleteDirectory($directory);
     }
+});
+
+test('Coolify initializes the persistent GeoIP volume at runtime', function () {
+    expect(file_get_contents(base_path('Dockerfile')))
+        ->not->toContain('php artisan analytics:geoip:update')
+        ->and(file_get_contents(base_path('docker-compose.yaml')))
+        ->toContain('if [ ! -s storage/app/private/geoip/dbip-city-lite.mmdb ]')
+        ->toContain('php artisan analytics:geoip:update --no-interaction');
 });

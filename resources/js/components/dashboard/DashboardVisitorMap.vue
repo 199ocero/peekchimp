@@ -128,44 +128,57 @@ async function startMap(): Promise<void> {
     }
 
     isStarting = true;
-    await nextTick();
+    mapError.value = false;
 
-    if (!mapElement.value) {
-        isStarting = false;
+    try {
+        await nextTick();
 
-        return;
-    }
-
-    const mapboxgl = (await import('mapbox-gl')).default;
-    map = new mapboxgl.Map({
-        accessToken: props.accessToken,
-        container: mapElement.value,
-        style: 'mapbox://styles/mapbox/standard',
-        projection: 'globe',
-        center: [10, 15],
-        zoom: 0.5,
-        config: {
-            basemap: {
-                lightPreset:
-                    resolvedAppearance.value === 'dark' ? 'night' : 'day',
-            },
-        },
-    });
-    map.scrollZoom.disable();
-    map.addControl(
-        new mapboxgl.NavigationControl({ showCompass: false }),
-        'top-right',
-    );
-    map.once('load', () => {
-        isReady = true;
-        void syncMarkers();
-    });
-    map.on('error', () => {
-        if (!isReady) {
-            mapError.value = true;
+        if (!mapElement.value) {
+            return;
         }
-    });
-    isStarting = false;
+
+        const initialVisitor = props.visitors[0];
+
+        if (!initialVisitor) {
+            return;
+        }
+
+        const mapboxgl = (await import('mapbox-gl')).default;
+        map = new mapboxgl.Map({
+            accessToken: props.accessToken,
+            container: mapElement.value,
+            style: 'mapbox://styles/mapbox/standard',
+            projection: 'globe',
+            center: markerPosition(initialVisitor),
+            zoom: 0.5,
+            config: {
+                basemap: {
+                    lightPreset:
+                        resolvedAppearance.value === 'dark' ? 'night' : 'day',
+                },
+            },
+        });
+        map.scrollZoom.disable();
+        map.addControl(
+            new mapboxgl.NavigationControl({ showCompass: false }),
+            'top-right',
+        );
+        map.once('load', () => {
+            isReady = true;
+            void syncMarkers();
+        });
+        map.on('error', ({ error }) => {
+            if (!isReady || /403|access token|scope/i.test(error.message)) {
+                mapError.value = true;
+            }
+        });
+    } catch {
+        mapError.value = true;
+        map?.remove();
+        map = null;
+    } finally {
+        isStarting = false;
+    }
 }
 
 watch(

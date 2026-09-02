@@ -98,6 +98,14 @@ test('dashboard date range select keeps its chevron inset from the edge', functi
         ->toContain('background-position: right 0.875rem center;');
 });
 
+test('visitor map starts on a visitor and handles token scope failures', function () {
+    $visitorMap = file_get_contents(resource_path('js/components/dashboard/DashboardVisitorMap.vue'));
+
+    expect($visitorMap)
+        ->toContain('center: markerPosition(initialVisitor)')
+        ->toContain('/403|access token|scope/i.test(error.message)');
+});
+
 test('app header includes the reference navigation and compact account controls', function () {
     $appHeader = file_get_contents(resource_path('js/components/AppHeader.vue'));
 

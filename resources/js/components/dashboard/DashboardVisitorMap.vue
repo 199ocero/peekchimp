@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { Globe2, LockKeyhole, MapPin } from '@lucide/vue';
+import { Globe2, LockKeyhole, MapPin, Maximize2 } from '@lucide/vue';
 import type { Map as MapboxMap, Marker } from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import {
@@ -13,7 +13,13 @@ import {
 } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { useAppearance } from '@/composables/useAppearance';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { edit as editMapbox } from '@/routes/settings/mapbox';
 
 type Visitor = {
@@ -37,7 +43,7 @@ const props = defineProps<{
 
 const mapElement = ref<HTMLElement | null>(null);
 const mapError = ref(false);
-const { resolvedAppearance } = useAppearance();
+const isExpanded = ref(false);
 const activeVisitors = computed(
     () => props.visitors.filter((visitor) => visitor.active).length,
 );
@@ -153,8 +159,7 @@ async function startMap(): Promise<void> {
             zoom: 0.5,
             config: {
                 basemap: {
-                    lightPreset:
-                        resolvedAppearance.value === 'dark' ? 'night' : 'day',
+                    lightPreset: 'day',
                 },
             },
         });
@@ -165,6 +170,17 @@ async function startMap(): Promise<void> {
         );
         map.once('load', () => {
             isReady = true;
+
+            if (isExpanded.value) {
+                map?.fitBounds(
+                    [
+                        [-180, -85],
+                        [180, 85],
+                    ],
+                    { padding: 32, duration: 0 },
+                );
+            }
+
             void syncMarkers();
         });
         map.on('error', ({ error }) => {
@@ -181,6 +197,15 @@ async function startMap(): Promise<void> {
     }
 }
 
+async function restartMap(): Promise<void> {
+    clearMarkers();
+    map?.remove();
+    map = null;
+    isReady = false;
+    await nextTick();
+    void startMap();
+}
+
 watch(
     () => props.visitors,
     () => {
@@ -193,13 +218,7 @@ watch(
     { deep: true },
 );
 
-watch(resolvedAppearance, (appearance) => {
-    map?.setConfigProperty(
-        'basemap',
-        'lightPreset',
-        appearance === 'dark' ? 'night' : 'day',
-    );
-});
+watch(isExpanded, () => void restartMap(), { flush: 'post' });
 
 onMounted(() => void startMap());
 onBeforeUnmount(() => {
@@ -230,24 +249,37 @@ onBeforeUnmount(() => {
                         </p>
                     </div>
                 </div>
-                <div class="flex shrink-0 items-center gap-3 text-[11px]">
-                    <span class="flex items-center gap-1.5">
-                        <i class="size-2 rounded-full bg-emerald-500" />
-                        {{ activeVisitors }} active
-                    </span>
-                    <span class="hidden items-center gap-1.5 sm:flex">
-                        <i class="size-2 rounded-full bg-slate-400" /> Today
-                    </span>
+                <div class="flex shrink-0 items-center gap-2">
+                    <div class="flex items-center gap-3 text-[11px]">
+                        <span class="flex items-center gap-1.5">
+                            <i class="size-2 rounded-full bg-emerald-500" />
+                            {{ activeVisitors }} active
+                        </span>
+                        <span class="hidden items-center gap-1.5 sm:flex">
+                            <i class="size-2 rounded-full bg-slate-400" /> Today
+                        </span>
+                    </div>
+                    <Button
+                        v-if="accessToken && visitors.length > 0"
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Expand visitor map"
+                        title="Expand visitor map"
+                        @click="isExpanded = true"
+                    >
+                        <Maximize2 class="size-4" />
+                    </Button>
                 </div>
             </div>
 
             <div
-                class="relative mt-5 flex min-h-64 flex-1 overflow-hidden rounded-xl border border-border/80 bg-muted/40"
+                class="relative mt-5 flex min-h-64 flex-1 overflow-hidden rounded-xl border border-border/80 bg-slate-100"
             >
                 <div
-                    v-if="accessToken && visitors.length > 0"
+                    v-if="!isExpanded && accessToken && visitors.length > 0"
                     ref="mapElement"
-                    class="absolute inset-0"
+                    class="absolute! inset-0"
                     aria-label="Map of visitors seen today"
                 />
 
@@ -306,5 +338,41 @@ onBeforeUnmount(() => {
                 >
             </p>
         </div>
+
+        <Dialog v-model:open="isExpanded">
+            <DialogContent
+                class="flex h-[min(85vh,52rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl"
+            >
+                <DialogHeader class="border-b border-border px-6 py-4 pr-14">
+                    <DialogTitle>Visitors around the globe</DialogTitle>
+                    <DialogDescription>
+                        Today in {{ timezone }} · {{ locatedVisitors }} of
+                        {{ totalVisitors }} located
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div class="relative min-h-0 flex-1 bg-slate-100">
+                    <div
+                        v-if="isExpanded && accessToken && visitors.length > 0"
+                        ref="mapElement"
+                        class="absolute! inset-0"
+                        aria-label="Expanded map of visitors seen today"
+                    />
+
+                    <div
+                        v-if="mapError"
+                        class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 px-6 text-center text-slate-900 backdrop-blur-sm"
+                        role="status"
+                    >
+                        <LockKeyhole class="mb-3 size-6 text-slate-500" />
+                        <p class="font-medium">Mapbox could not load</p>
+                        <p class="mt-1 max-w-xs text-sm text-slate-600">
+                            Check the workspace Mapbox public token and try
+                            again.
+                        </p>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
     </Card>
 </template>

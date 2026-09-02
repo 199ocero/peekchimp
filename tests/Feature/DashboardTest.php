@@ -98,12 +98,19 @@ test('dashboard date range select keeps its chevron inset from the edge', functi
         ->toContain('background-position: right 0.875rem center;');
 });
 
-test('visitor map starts on a visitor and handles token scope failures', function () {
+test('visitor map stays visible, uses daylight, and can expand', function () {
     $visitorMap = file_get_contents(resource_path('js/components/dashboard/DashboardVisitorMap.vue'));
 
     expect($visitorMap)
         ->toContain('center: markerPosition(initialVisitor)')
-        ->toContain('/403|access token|scope/i.test(error.message)');
+        ->toContain('class="absolute! inset-0"')
+        ->toContain("lightPreset: 'day'")
+        ->toContain('aria-label="Expand visitor map"')
+        ->toContain('<Dialog v-model:open="isExpanded">')
+        ->toContain('map?.fitBounds(')
+        ->toContain('{ padding: 32, duration: 0 }')
+        ->toContain('/403|access token|scope/i.test(error.message)')
+        ->not->toContain('resolvedAppearance');
 });
 
 test('app header includes the reference navigation and compact account controls', function () {

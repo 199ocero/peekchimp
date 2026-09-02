@@ -11,6 +11,7 @@ import { edit as editMembers } from '@/routes/members';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
 import { edit as editAi } from '@/routes/settings/ai';
+import { edit as editMapbox } from '@/routes/settings/mapbox';
 import { edit as editMcp } from '@/routes/settings/mcp';
 import type { NavItem } from '@/types';
 
@@ -36,6 +37,7 @@ const sidebarNavItems = computed<NavItem[]>(() => [
         ? [
               { title: 'Members', href: editMembers() },
               { title: 'AI chat', href: editAi() },
+              { title: 'Maps', href: editMapbox() },
           ]
         : []),
 ]);

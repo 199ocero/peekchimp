@@ -31,11 +31,12 @@ use Laravel\Passport\HasApiTokens;
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property string|null $mapbox_public_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable(['name', 'email', 'password', 'is_admin', 'workspace_owner_id'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'is_admin', 'current_project_id', 'workspace_owner_id'])]
+#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'mapbox_public_token', 'is_admin', 'current_project_id', 'workspace_owner_id'])]
 class User extends Authenticatable implements OAuthenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -53,6 +54,7 @@ class User extends Authenticatable implements OAuthenticatable
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'is_admin' => 'boolean',
+            'mapbox_public_token' => 'encrypted',
         ];
     }
 

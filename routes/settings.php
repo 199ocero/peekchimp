@@ -5,6 +5,7 @@ use App\Http\Controllers\Settings\McpConnectionController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\WorkspaceAiSettingsController;
+use App\Http\Controllers\WorkspaceMapboxSettingsController;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
 
@@ -44,6 +45,13 @@ Route::middleware(['auth', 'verified', 'website.configured'])->group(function ()
         ->name('settings.ai.update');
     Route::post('settings/ai/test', [WorkspaceAiSettingsController::class, 'test'])
         ->name('settings.ai.test');
+
+    Route::get('settings/mapbox', [WorkspaceMapboxSettingsController::class, 'edit'])
+        ->name('settings.mapbox.edit');
+    Route::patch('settings/mapbox', [WorkspaceMapboxSettingsController::class, 'update'])
+        ->name('settings.mapbox.update');
+    Route::delete('settings/mapbox', [WorkspaceMapboxSettingsController::class, 'destroy'])
+        ->name('settings.mapbox.destroy');
 
     Route::get('settings/mcp', [McpConnectionController::class, 'edit'])
         ->name('settings.mcp.edit');

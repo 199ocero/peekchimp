@@ -9,6 +9,7 @@ use App\Mcp\Servers\PeekchimpServer;
 use App\Mcp\Tools\BuildContentBrief;
 use App\Mcp\Tools\CheckBehavioralSignals;
 use App\Mcp\Tools\CreateGoal;
+use App\Mcp\Tools\DeleteGoal;
 use App\Mcp\Tools\FindContentOpportunities;
 use App\Mcp\Tools\FindFriction;
 use App\Mcp\Tools\GetAnalyticsOverview;
@@ -24,6 +25,7 @@ use App\Mcp\Tools\RecommendContentImprovements;
 use App\Mcp\Tools\RecommendConversionExperiments;
 use App\Mcp\Tools\SaveGrowthContext;
 use App\Mcp\Tools\StartWebsiteCrawl;
+use App\Mcp\Tools\UpdateGoal;
 use App\Models\AiVisibilityScan;
 use App\Models\AnalyticsEvent;
 use App\Models\Funnel;
@@ -205,11 +207,27 @@ test('behavioral signal check confirms stored events without exposing payloads',
     AnalyticsEvent::factory()->for($project)->create([
         'event_name' => 'page_view',
         'session_id' => 'signal-session',
+        'path' => '/pricing',
         'occurred_at' => now()->subMinute(),
+    ]);
+    AnalyticsEvent::factory()->for($project)->count(2)->create([
+        'event_name' => 'autocapture.click',
+        'session_id' => 'signal-session',
+        'path' => '/pricing',
+        'properties' => ['kind' => 'click', 'target' => 'choose-pro'],
+        'occurred_at' => now(),
+    ]);
+    AnalyticsEvent::factory()->for($project)->create([
+        'event_name' => 'autocapture.submit',
+        'session_id' => 'signal-session',
+        'path' => '/register',
+        'properties' => ['target' => 'signup-form', 'method' => 'POST', 'action_path' => '/register'],
+        'occurred_at' => now(),
     ]);
     AnalyticsEvent::factory()->for($project)->create([
         'event_name' => 'request_failure',
         'session_id' => 'signal-session',
+        'path' => '/playground',
         'properties' => ['request_path' => '/api/checkout', 'status' => 500],
         'occurred_at' => now(),
     ]);
@@ -225,12 +243,26 @@ test('behavioral signal check confirms stored events without exposing payloads',
             ->where('data.status', 'receiving')
             ->where('data.enabled', true)
             ->where('data.stored', true)
-            ->where('data.signalCount', 1)
+            ->where('data.signalCount', 4)
             ->where('data.sessionCount', 1)
             ->where('data.eventTypes.request_failure', 1)
             ->where('data.pageviewSessions', 1)
+            ->where('data.signalDetails.0.page', '/pricing')
+            ->where('data.signalDetails.0.signal', 'autocapture.click')
+            ->where('data.signalDetails.0.element', 'choose-pro')
+            ->where('data.signalDetails.0.count', 2)
+            ->where('data.signalDetails.1.page', '/playground')
+            ->where('data.signalDetails.1.signal', 'request_failure')
+            ->where('data.signalDetails.1.endpoint', '/api/checkout')
+            ->where('data.signalDetails.1.count', 1)
+            ->where('data.signalDetails.2.page', '/register')
+            ->where('data.signalDetails.2.signal', 'autocapture.submit')
+            ->where('data.signalDetails.2.element', 'signup-form')
+            ->where('data.signalDetails.2.count', 1)
+            ->where('data.signalDetailLimit', 50)
             ->where('data.lastSignalAt', fn ($value) => is_string($value))
             ->missing('data.events.0.properties')
+            ->missing('data.signalDetails.0.properties')
             ->etc(),
         );
 });
@@ -584,4 +616,56 @@ test('setup tools save growth context, create idempotent goals, and queue a veri
             ->where('status', 'already_in_progress')
             ->etc(),
         );
+});
+
+test('goal tools update and delete only goals managed by the user', function () {
+    Queue::fake();
+    $user = User::factory()->withVerifiedWebsite()->create();
+    $project = $user->projects()->sole();
+    $goal = $project->goals()->create([
+        'name' => 'Signup',
+        'type' => 'event',
+        'event_name' => 'signup_completed',
+        'property_match' => ['plan' => 'pro'],
+    ]);
+
+    PeekchimpServer::actingAs($user)
+        ->tool(UpdateGoal::class, [
+            'project_id' => $project->getKey(),
+            'goal_id' => $goal->getKey(),
+            'name' => 'Paid signup',
+            'is_active' => false,
+        ])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('status', 'updated')
+            ->where('data.goal.name', 'Paid signup')
+            ->where('data.goal.eventName', 'signup_completed')
+            ->where('data.goal.propertyMatch.plan', 'pro')
+            ->where('data.goal.isActive', false)
+            ->etc());
+
+    Queue::assertPushed(BackfillGoalConversions::class);
+
+    $otherUser = User::factory()->withVerifiedWebsite()->create();
+    PeekchimpServer::actingAs($otherUser)
+        ->tool(DeleteGoal::class, [
+            'project_id' => $project->getKey(),
+            'goal_id' => $goal->getKey(),
+        ])
+        ->assertHasErrors(['not available']);
+
+    PeekchimpServer::actingAs($user)
+        ->tool(DeleteGoal::class, [
+            'project_id' => $project->getKey(),
+            'goal_id' => $goal->getKey(),
+        ])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('status', 'deleted')
+            ->where('data.goal.id', $goal->getKey())
+            ->where('data.goal.name', 'Paid signup')
+            ->etc());
+
+    $this->assertModelMissing($goal);
 });

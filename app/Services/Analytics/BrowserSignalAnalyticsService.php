@@ -5,10 +5,14 @@ namespace App\Services\Analytics;
 use App\Models\AnalyticsEvent;
 use App\Models\Project;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
 
 class BrowserSignalAnalyticsService
 {
+    private const DETAIL_LIMIT = 50;
+
     /** @var array<int, string> */
     private const SIGNAL_EVENT_NAMES = [
         'autocapture.click',
@@ -49,9 +53,101 @@ class BrowserSignalAnalyticsService
             'sessionCount' => (int) (clone $query)->distinct('session_id')->count('session_id'),
             'pageviewSessions' => $this->pageviewSessions($project, $from, $to),
             'eventTypes' => $eventTypes,
+            'signalDetails' => $this->signalDetails($query),
+            'signalDetailLimit' => self::DETAIL_LIMIT,
             'lastSignalAt' => $lastSignalAt === null ? null : CarbonImmutable::parse((string) $lastSignalAt)->toIso8601String(),
             'evidenceRef' => 'analytics:signals:collection:'.$from->toDateString().':'.$to->toDateString(),
         ];
+    }
+
+    /**
+     * @param  Builder<AnalyticsEvent>|Relation<AnalyticsEvent, Project, mixed>  $query
+     * @return array<int, array<string, mixed>>
+     */
+    private function signalDetails(Builder|Relation $query): array
+    {
+        $propertiesBySignal = [
+            'autocapture.click' => [
+                'target' => 'target',
+                'tag' => 'tag',
+                'kind' => 'kind',
+                'destinationHost' => 'destination_host',
+                'fileExtension' => 'file_extension',
+            ],
+            'autocapture.submit' => [
+                'target' => 'target',
+                'method' => 'method',
+                'endpoint' => 'action_path',
+            ],
+            'request_failure' => [
+                'endpoint' => 'request_path',
+                'method' => 'method',
+                'status' => 'status',
+            ],
+            'browser_error' => [
+                'errorType' => 'error_type',
+                'scriptPath' => 'script_path',
+            ],
+            'web_vital.lcp' => [],
+        ];
+        $details = collect();
+
+        foreach ($propertiesBySignal as $signal => $properties) {
+            $selectors = collect($properties)
+                ->map(fn (string $property, string $field): string => "properties->{$property} as {$field}")
+                ->values()
+                ->all();
+            $groups = collect($properties)
+                ->map(fn (string $property): string => "properties->{$property}")
+                ->values()
+                ->all();
+
+            $rows = (clone $query)
+                ->where('event_name', $signal)
+                ->select(['path', ...$selectors])
+                ->selectRaw('COUNT(*) as count, COUNT(DISTINCT session_id) as sessions')
+                ->groupBy(['path', ...$groups])
+                ->orderByDesc('count')
+                ->limit(self::DETAIL_LIMIT)
+                ->get();
+
+            foreach ($rows as $row) {
+                $detail = [
+                    'page' => $row->getAttribute('path'),
+                    'signal' => $signal,
+                    'count' => (int) $row->getAttribute('count'),
+                    'sessions' => (int) $row->getAttribute('sessions'),
+                ];
+
+                foreach (array_keys($properties) as $field) {
+                    $detail[$field] = $row->getAttribute($field);
+                }
+
+                if (isset($detail['status'])) {
+                    $detail['status'] = (int) $detail['status'];
+                }
+
+                if ($signal === 'autocapture.click') {
+                    $detail['element'] = $row->getAttribute('target') ?: $row->getAttribute('tag');
+                    unset($detail['target'], $detail['tag']);
+                } elseif ($signal === 'autocapture.submit') {
+                    $detail['element'] = $row->getAttribute('target');
+                    unset($detail['target']);
+                }
+
+                $details->push(array_filter($detail, fn (mixed $value): bool => $value !== null && $value !== ''));
+            }
+        }
+
+        return $details
+            ->sortBy([
+                ['count', 'desc'],
+                ['page', 'asc'],
+                ['signal', 'asc'],
+            ])
+            ->take(self::DETAIL_LIMIT)
+            ->values()
+            ->all();
     }
 
     /** @return array<string, mixed> */

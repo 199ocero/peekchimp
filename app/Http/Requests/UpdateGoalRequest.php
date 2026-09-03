@@ -29,8 +29,17 @@ class UpdateGoalRequest extends FormRequest
      */
     public function rules(): array
     {
+        $project = $this->route('project');
+        $goal = $this->route('goal');
+
         return [
-            'name' => ['sometimes', 'required', 'string', 'max:120'],
+            'name' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:120',
+                Rule::unique('goals')->where('project_id', $project instanceof Project ? $project->getKey() : 0)->ignore($goal instanceof Goal ? $goal->getKey() : null),
+            ],
             'type' => ['sometimes', 'required', 'string', Rule::in(['event', 'url'])],
             'event_name' => ['nullable', 'string', 'regex:/^[a-zA-Z][a-zA-Z0-9_.:-]{0,99}$/'],
             'path' => ['nullable', 'string', 'max:2048'],

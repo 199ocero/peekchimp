@@ -17,7 +17,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Verify whether privacy-safe behavioral signals are enabled and being stored for a website in a reporting range.')]
+#[Description('Return privacy-safe behavioral signal totals and top aggregate details by page, signal type, element, or endpoint for a reporting range.')]
 #[IsReadOnly]
 #[IsIdempotent]
 class CheckBehavioralSignals extends Tool
@@ -55,7 +55,42 @@ class CheckBehavioralSignals extends Tool
     /** @return array<string, Type> */
     public function outputSchema(JsonSchema $schema): array
     {
-        return $this->reportOutputSchema($schema);
+        return [
+            'status' => $schema->string()->required(),
+            'range' => $schema->object([
+                'key' => $schema->string(),
+                'label' => $schema->string(),
+                'from' => $schema->string(),
+                'to' => $schema->string(),
+            ])->required(),
+            'data' => $schema->object([
+                'status' => $schema->string()->required(),
+                'enabled' => $schema->boolean()->required(),
+                'stored' => $schema->boolean()->required(),
+                'signalCount' => $schema->integer()->required(),
+                'sessionCount' => $schema->integer()->required(),
+                'pageviewSessions' => $schema->integer()->required(),
+                'eventTypes' => $schema->object()->required(),
+                'signalDetails' => $schema->array()->items($schema->object([
+                    'page' => $schema->string()->nullable(),
+                    'signal' => $schema->string()->required(),
+                    'count' => $schema->integer()->required(),
+                    'sessions' => $schema->integer()->required(),
+                    'element' => $schema->string()->nullable(),
+                    'kind' => $schema->string()->nullable(),
+                    'endpoint' => $schema->string()->nullable(),
+                    'method' => $schema->string()->nullable(),
+                    'status' => $schema->integer()->nullable(),
+                    'errorType' => $schema->string()->nullable(),
+                    'scriptPath' => $schema->string()->nullable(),
+                    'destinationHost' => $schema->string()->nullable(),
+                    'fileExtension' => $schema->string()->nullable(),
+                ]))->required(),
+                'signalDetailLimit' => $schema->integer()->required(),
+                'lastSignalAt' => $schema->string()->nullable(),
+                'evidenceRef' => $schema->string()->required(),
+            ])->required(),
+        ];
     }
 
     /**

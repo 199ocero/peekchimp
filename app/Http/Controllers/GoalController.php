@@ -3,9 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Goals\CreateGoalAction;
+use App\Actions\Goals\UpdateGoalAction;
 use App\Http\Requests\StoreGoalRequest;
 use App\Http\Requests\UpdateGoalRequest;
-use App\Jobs\BackfillGoalConversions;
 use App\Models\Goal;
 use App\Models\Project;
 use App\Services\Analytics\GoalAnalyticsService;
@@ -50,13 +50,11 @@ class GoalController extends Controller
         return to_route('websites.goals.index', $project);
     }
 
-    public function update(UpdateGoalRequest $request, Project $project, Goal $goal): RedirectResponse
+    public function update(UpdateGoalRequest $request, Project $project, Goal $goal, UpdateGoalAction $updateGoal): RedirectResponse
     {
         Gate::authorize('manage', $project);
         abort_unless($goal->project_id === $project->getKey(), 404);
-        $goal->conversions()->delete();
-        $goal->update($this->normalized($request->validated(), $goal));
-        BackfillGoalConversions::dispatch($goal->fresh());
+        $updateGoal->handle($goal, $request->validated());
 
         return to_route('websites.goals.index', $project);
     }
@@ -68,25 +66,5 @@ class GoalController extends Controller
         $goal->delete();
 
         return to_route('websites.goals.index', $project);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    private function normalized(array $data, ?Goal $existing = null): array
-    {
-        $type = (string) ($data['type'] ?? ($existing === null ? 'event' : $existing->type));
-        $properties = is_array($data['property_match'] ?? null) ? array_slice($data['property_match'], 0, 5, true) : null;
-        $properties = $properties === null ? null : array_filter($properties, 'is_scalar');
-
-        return [
-            ...$data,
-            'type' => $type,
-            'event_name' => $type === 'event' ? ($data['event_name'] ?? ($existing === null ? null : $existing->event_name)) : null,
-            'path' => $type === 'url' ? ($data['path'] ?? ($existing === null ? null : $existing->path)) : null,
-            'path_operator' => $type === 'url' ? ($data['path_operator'] ?? ($existing === null ? 'exact' : $existing->path_operator)) : 'exact',
-            'property_match' => $properties,
-        ];
     }
 }

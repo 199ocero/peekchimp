@@ -10,7 +10,7 @@ class EventNormalizer
 {
     /** @var array<string, array<int, string>> */
     private const RESERVED_PROPERTIES = [
-        'autocapture.click' => ['kind', 'tag', 'role', 'type', 'target', 'destination_host', 'file_extension'],
+        'autocapture.click' => ['kind', 'tag', 'role', 'type', 'target', 'element_key', 'text', 'href', 'id', 'name', 'destination_host', 'file_extension'],
         'autocapture.submit' => ['target', 'method', 'action_path'],
         'web_vital.lcp' => ['value_ms'],
         'browser_error' => ['error_type', 'script_path', 'line', 'column', 'fingerprint'],
@@ -57,7 +57,7 @@ class EventNormalizer
 
             if (is_string($value)) {
                 $customProperties[Str::limit($key, 64, '')] = match ($key) {
-                    'action_path', 'request_path', 'script_path' => $this->path($value),
+                    'action_path', 'request_path', 'script_path', 'href' => $this->path($value),
                     'destination_host' => $this->propertyHost($value),
                     default => Str::limit($value, 256, ''),
                 };

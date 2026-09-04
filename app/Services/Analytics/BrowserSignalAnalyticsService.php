@@ -70,6 +70,11 @@ class BrowserSignalAnalyticsService
             'autocapture.click' => [
                 'target' => 'target',
                 'tag' => 'tag',
+                'elementKey' => 'element_key',
+                'text' => 'text',
+                'href' => 'href',
+                'elementId' => 'id',
+                'name' => 'name',
                 'kind' => 'kind',
                 'destinationHost' => 'destination_host',
                 'fileExtension' => 'file_extension',
@@ -129,7 +134,8 @@ class BrowserSignalAnalyticsService
 
                 if ($signal === 'autocapture.click') {
                     $detail['element'] = $row->getAttribute('target') ?: $row->getAttribute('tag');
-                    unset($detail['target'], $detail['tag']);
+                    $detail['id'] = $row->getAttribute('elementId');
+                    unset($detail['target'], $detail['elementId']);
                 } elseif ($signal === 'autocapture.submit') {
                     $detail['element'] = $row->getAttribute('target');
                     unset($detail['target']);

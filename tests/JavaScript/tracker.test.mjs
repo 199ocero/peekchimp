@@ -133,6 +133,23 @@ test('autocapture emits semantic metadata without values or query strings', asyn
         },
     };
     const download = { ...link, href: 'https://example.test/downloads/guide.pdf?token=private', hasAttribute: (name) => name === 'download' };
+    const callToAction = {
+        tagName: 'A',
+        href: 'https://example.test/register?token=private#form',
+        textContent: '  Start   free  ',
+        getAttribute(name) {
+            return {
+                'data-peekchimp-name': 'pricing-pro-get-started',
+                'aria-label': 'Get Started',
+                id: 'pro-cta',
+                name: 'register',
+            }[name] ?? null;
+        },
+        hasAttribute: () => false,
+        closest() {
+            return this;
+        },
+    };
     const form = {
         tagName: 'FORM',
         getAttribute(name) {
@@ -143,16 +160,28 @@ test('autocapture emits semantic metadata without values or query strings', asyn
 
     browserInstance.document.dispatch('click', { target: link });
     browserInstance.document.dispatch('click', { target: download });
+    browserInstance.document.dispatch('click', { target: callToAction });
     browserInstance.document.dispatch('submit', { target: form });
 
     const events = browserInstance.bodies.flatMap((body) => body.events);
-    assert.deepEqual(events.map((event) => event.event_name), ['page_view', 'autocapture.click', 'autocapture.click', 'autocapture.submit']);
+    assert.deepEqual(events.map((event) => event.event_name), ['page_view', 'autocapture.click', 'autocapture.click', 'autocapture.click', 'autocapture.submit']);
     assert.equal(events[1].properties.destination_host, 'outside.test');
+    assert.equal(events[1].properties.href, undefined);
     assert.equal(events[1].properties.kind, 'external');
     assert.equal(events[2].properties.file_extension, 'pdf');
-    assert.equal(events[3].properties.action_path, '/checkout');
-    assert.equal(events[3].path, '/pricing');
-    assert.equal(events[3].referrer, 'https://referrer.test');
+    assert.deepEqual(events[3].properties, {
+        kind: 'click',
+        tag: 'a',
+        target: 'pricing-pro-get-started',
+        element_key: 'pricing-pro-get-started',
+        text: 'Get Started',
+        href: '/register',
+        id: 'pro-cta',
+        name: 'register',
+    });
+    assert.equal(events[4].properties.action_path, '/checkout');
+    assert.equal(events[4].path, '/pricing');
+    assert.equal(events[4].referrer, 'https://referrer.test');
     assert.equal(JSON.stringify(events).includes('private'), false);
 });
 

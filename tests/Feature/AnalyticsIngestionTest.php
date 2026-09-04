@@ -170,7 +170,17 @@ test('autocapture interactions count as engagement while diagnostic signals do n
                 'event_name' => 'autocapture.click',
                 'session_id' => 'browser-session-engagement',
                 'path' => '/pricing',
-                'properties' => ['kind' => 'click', 'target' => 'try-pro'],
+                'properties' => [
+                    'kind' => 'click',
+                    'tag' => 'a',
+                    'target' => 'try-pro',
+                    'element_key' => 'pricing-pro-get-started',
+                    'text' => 'Get Started',
+                    'href' => '/register?token=private',
+                    'id' => 'pro-cta',
+                    'name' => 'register',
+                    'value' => 'private input value',
+                ],
             ],
         ],
     ];
@@ -178,7 +188,17 @@ test('autocapture interactions count as engagement while diagnostic signals do n
     $this->postJson(route('api.v1.events.store'), $payload)->assertAccepted();
 
     expect(AnalyticsSession::query()->sole()->custom_events)->toBe(1)
-        ->and(AnalyticsSession::query()->sole()->is_bounce)->toBeFalse();
+        ->and(AnalyticsSession::query()->sole()->is_bounce)->toBeFalse()
+        ->and(AnalyticsEvent::query()->where('event_name', 'autocapture.click')->sole()->properties)->toBe([
+            'kind' => 'click',
+            'tag' => 'a',
+            'target' => 'try-pro',
+            'element_key' => 'pricing-pro-get-started',
+            'text' => 'Get Started',
+            'href' => '/register',
+            'id' => 'pro-cta',
+            'name' => 'register',
+        ]);
 });
 
 test('disabled browser signals are filtered at ingestion', function () {

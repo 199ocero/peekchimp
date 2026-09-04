@@ -214,7 +214,16 @@ test('behavioral signal check confirms stored events without exposing payloads',
         'event_name' => 'autocapture.click',
         'session_id' => 'signal-session',
         'path' => '/pricing',
-        'properties' => ['kind' => 'click', 'target' => 'choose-pro'],
+        'properties' => [
+            'kind' => 'click',
+            'tag' => 'a',
+            'target' => 'choose-pro',
+            'element_key' => 'pricing-pro-get-started',
+            'text' => 'Get Started',
+            'href' => '/register',
+            'id' => 'pro-cta',
+            'name' => 'register',
+        ],
         'occurred_at' => now(),
     ]);
     AnalyticsEvent::factory()->for($project)->create([
@@ -250,6 +259,12 @@ test('behavioral signal check confirms stored events without exposing payloads',
             ->where('data.signalDetails.0.page', '/pricing')
             ->where('data.signalDetails.0.signal', 'autocapture.click')
             ->where('data.signalDetails.0.element', 'choose-pro')
+            ->where('data.signalDetails.0.elementKey', 'pricing-pro-get-started')
+            ->where('data.signalDetails.0.tag', 'a')
+            ->where('data.signalDetails.0.text', 'Get Started')
+            ->where('data.signalDetails.0.href', '/register')
+            ->where('data.signalDetails.0.id', 'pro-cta')
+            ->where('data.signalDetails.0.name', 'register')
             ->where('data.signalDetails.0.count', 2)
             ->where('data.signalDetails.1.page', '/playground')
             ->where('data.signalDetails.1.signal', 'request_failure')

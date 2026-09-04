@@ -201,6 +201,17 @@
         return element.getAttribute('data-peekchimp-name') || element.getAttribute('name') || undefined;
     }
 
+    function elementKey(element) {
+        return element.getAttribute('data-peekchimp-name') || element.getAttribute('id') || element.getAttribute('name') || undefined;
+    }
+
+    function elementText(element) {
+        var text = element.getAttribute('aria-label') || element.textContent || '';
+        text = text.replace(/\s+/g, ' ').trim();
+
+        return text ? text.slice(0, 120) : undefined;
+    }
+
     function interactiveElement(target) {
         return target && typeof target.closest === 'function'
             ? target.closest('a,button,input[type="button"],input[type="submit"],[role="button"]')
@@ -237,6 +248,11 @@
             role: element.getAttribute('role') || undefined,
             type: type,
             target: semanticName(element),
+            element_key: elementKey(element),
+            text: elementText(element),
+            href: destination && destination.origin === window.location.origin ? destination.pathname : undefined,
+            id: element.getAttribute('id') || undefined,
+            name: element.getAttribute('name') || undefined,
             destination_host: destination && kind === 'external' ? destination.hostname : undefined,
             file_extension: extension
         });

@@ -17,6 +17,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Http/{Controllers,Requests}/WorkspaceMapboxSettings*.php | .ai/rules/controllers-requests.md |
 | app/Jobs/GenerateInsightRecommendations.php,app/Http/Controllers/GenerateDashboardAiInsightsController.php,app/Services/Analytics/AiInsightContextBuilder.php | .ai/rules/controllers-services-analytics.md |
 | resources/js/pages/Dashboard.vue,resources/js/pages/public/Dashboard.vue,resources/js/components/dashboard/** | .ai/rules/dashboard.md |
+| app/{Http/Controllers,Http/Requests,Policies,Services/SearchConsole}/**,resources/js/pages/websites/Settings.vue,tests/Feature/SearchConsole* | .ai/rules/feature.md |
 | **, Dockerfile,docker-compose.yaml | .ai/rules/general.md |
 | app/Services/Analytics/**,app/Jobs/**,resources/js/pages/Dashboard.vue | .ai/rules/js-pages.md |
 | app/Mcp/** | .ai/rules/mcp.md |

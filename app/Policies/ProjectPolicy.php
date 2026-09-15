@@ -30,7 +30,7 @@ class ProjectPolicy
 
     public function manageIntegrations(User $user, Project $project): bool
     {
-        return $user->is_admin && $this->view($user, $project);
+        return $this->view($user, $project);
     }
 
     public function share(User $user, Project $project): bool

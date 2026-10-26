@@ -40,6 +40,7 @@ class WebsiteSettingsController extends Controller
                 'isVerified' => $project->domains->contains(fn ($domain): bool => $domain->is_verified),
                 'autocaptureEnabled' => $project->isAutocaptureEnabled(),
                 'growthContext' => $project->growthContext(),
+                'canDelete' => $request->user()?->can('delete', $project) === true,
             ],
             'timezones' => DateTimeZone::listIdentifiers(),
             'trackerUrl' => asset('a.js'),

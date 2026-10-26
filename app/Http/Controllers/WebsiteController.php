@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Websites\CreateWebsiteAction;
+use App\Actions\Websites\DeleteWebsiteAction;
 use App\Actions\Websites\SelectCurrentWebsiteAction;
 use App\Actions\Websites\UpdateWebsiteAction;
+use App\Http\Requests\DestroyWebsiteRequest;
 use App\Http\Requests\StoreWebsiteRequest;
 use App\Http\Requests\UpdateWebsiteRequest;
 use App\Models\Project;
@@ -48,6 +50,18 @@ class WebsiteController extends Controller
         $updateWebsite->handle($project, $request->website());
 
         return to_route('websites.setup', $project);
+    }
+
+    public function destroy(
+        DestroyWebsiteRequest $request,
+        Project $project,
+        DeleteWebsiteAction $deleteWebsite,
+    ): RedirectResponse {
+        $deleteWebsite->handle($project);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $project->name.' and all of its data were deleted.']);
+
+        return to_route('dashboard');
     }
 
     public function select(

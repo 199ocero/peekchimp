@@ -12,6 +12,7 @@ import {
     Search,
     ShieldCheck,
     Target,
+    Trash2,
     Unplug,
 } from '@lucide/vue';
 import { useClipboard } from '@vueuse/core';
@@ -20,9 +21,20 @@ import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
+import { destroy as destroyWebsite } from '@/routes/websites';
 import { store as queueWebsiteCrawl } from '@/routes/websites/crawl';
 import {
     connect as connectSearchConsole,
@@ -55,6 +67,7 @@ const props = defineProps<{
             brand_voice: string;
             primary_conversion_goals: string[];
         };
+        canDelete: boolean;
     };
     timezones: string[];
     trackerUrl: string;
@@ -116,6 +129,12 @@ const sharingForm = useForm({
 const propertyForm = useForm({
     site_url: props.searchConsole.candidates[0]?.siteUrl ?? '',
 });
+const deleteForm = useForm({
+    confirmation: '',
+});
+const deleteConfirmationPhrase = computed(
+    () => props.website.domain ?? props.website.name,
+);
 const page = usePage();
 const { start: startCrawlPolling, stop: stopCrawlPolling } = usePoll(
     3000,
@@ -261,6 +280,12 @@ function disconnectGoogleSearchConsole(): void {
     });
 }
 
+function deleteWebsite(): void {
+    deleteForm.delete(destroyWebsite(props.website.id).url, {
+        preserveScroll: true,
+    });
+}
+
 function formatTimestamp(
     value: string | null,
     fallback = 'Not synced yet',
@@ -333,6 +358,9 @@ async function copy(value: string): Promise<void> {
                         ['website-crawl', 'Website crawl'],
                         ['search-console', 'Search Console'],
                         ['sharing', 'Public sharing'],
+                        ...(website.canDelete
+                            ? [['delete-website', 'Delete website']]
+                            : []),
                     ]"
                     :key="item[0]"
                     :href="`#${item[0]}`"
@@ -1259,6 +1287,121 @@ async function copy(value: string): Promise<void> {
                                 </Button>
                             </div>
                         </form>
+                    </Card>
+                </section>
+
+                <section
+                    v-if="website.canDelete"
+                    id="delete-website"
+                    class="scroll-mt-6"
+                >
+                    <Card class="gap-0 border-destructive/30 p-5 sm:p-6">
+                        <div class="flex items-start gap-3">
+                            <span
+                                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-destructive/30 bg-destructive/10 text-destructive"
+                                aria-hidden="true"
+                            >
+                                <Trash2 class="size-4" />
+                            </span>
+                            <div>
+                                <h2 class="font-medium">Delete website</h2>
+                                <p class="mt-1 text-sm text-muted-foreground">
+                                    Permanently remove this website, its domain,
+                                    and all collected analytics, goals, funnels,
+                                    crawls, Search Console data, and chats. This
+                                    cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 flex justify-end">
+                            <Dialog
+                                @update:open="
+                                    (open) => {
+                                        if (!open) {
+                                            deleteForm.reset();
+                                            deleteForm.clearErrors();
+                                        }
+                                    }
+                                "
+                            >
+                                <DialogTrigger as-child>
+                                    <Button variant="destructive">
+                                        <Trash2 class="size-3.5" />
+                                        Delete website
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                    <form
+                                        class="space-y-6"
+                                        @submit.prevent="deleteWebsite"
+                                    >
+                                        <DialogHeader class="space-y-3">
+                                            <DialogTitle
+                                                >Delete
+                                                {{ website.name }}?</DialogTitle
+                                            >
+                                            <DialogDescription>
+                                                The tracker will stop being
+                                                accepted and every piece of data
+                                                collected for this website will
+                                                be permanently deleted.
+                                            </DialogDescription>
+                                        </DialogHeader>
+
+                                        <div class="grid gap-2">
+                                            <Label for="delete-confirmation">
+                                                Type
+                                                <span class="font-mono">{{
+                                                    deleteConfirmationPhrase
+                                                }}</span>
+                                                to confirm
+                                            </Label>
+                                            <Input
+                                                id="delete-confirmation"
+                                                v-model="
+                                                    deleteForm.confirmation
+                                                "
+                                                autocomplete="off"
+                                                class="font-mono"
+                                            />
+                                            <InputError
+                                                :message="
+                                                    deleteForm.errors
+                                                        .confirmation
+                                                "
+                                            />
+                                        </div>
+
+                                        <DialogFooter class="gap-2">
+                                            <DialogClose as-child>
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                >
+                                                    Cancel
+                                                </Button>
+                                            </DialogClose>
+                                            <Button
+                                                type="submit"
+                                                variant="destructive"
+                                                :disabled="
+                                                    deleteForm.processing ||
+                                                    deleteForm.confirmation !==
+                                                        deleteConfirmationPhrase
+                                                "
+                                            >
+                                                {{
+                                                    deleteForm.processing
+                                                        ? 'Deleting…'
+                                                        : 'Delete website'
+                                                }}
+                                            </Button>
+                                        </DialogFooter>
+                                    </form>
+                                </DialogContent>
+                            </Dialog>
+                        </div>
                     </Card>
                 </section>
             </main>

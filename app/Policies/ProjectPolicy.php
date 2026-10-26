@@ -28,6 +28,11 @@ class ProjectPolicy
         return $this->view($user, $project);
     }
 
+    public function delete(User $user, Project $project): bool
+    {
+        return $this->view($user, $project) && $project->user()->is($user);
+    }
+
     public function manageIntegrations(User $user, Project $project): bool
     {
         return $this->view($user, $project);

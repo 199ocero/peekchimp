@@ -42,6 +42,7 @@ Route::middleware('auth')->group(function () {
     Route::post('websites', [WebsiteController::class, 'store'])->name('websites.store');
     Route::get('websites/{project}/setup', [WebsiteController::class, 'setup'])->name('websites.setup');
     Route::patch('websites/{project}', [WebsiteController::class, 'update'])->name('websites.update');
+    Route::delete('websites/{project}', [WebsiteController::class, 'destroy'])->name('websites.destroy');
     Route::patch('websites/{project}/current', [WebsiteController::class, 'select'])->name('websites.current');
 });
 
